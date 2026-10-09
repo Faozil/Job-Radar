@@ -64,9 +64,9 @@ data "aws_iam_policy_document" "lambda" {
   }
 
   statement {
-    sid       = "ReadTelegramSettings"
+    sid       = "ReadEmailSettings"
     actions   = ["ssm:GetParameter"]
-    resources = [aws_ssm_parameter.telegram_token.arn, aws_ssm_parameter.telegram_chat_id.arn]
+    resources = [aws_ssm_parameter.email_address.arn, aws_ssm_parameter.email_password.arn]
   }
 
   statement {
@@ -97,7 +97,7 @@ resource "aws_lambda_function" "radar" {
   #checkov:skip=CKV_AWS_272:Code signing is not needed for a single-maintainer project
 
   function_name    = local.function_name
-  description      = "Sends new DevOps job ads to Telegram"
+  description      = "Emails new DevOps job ads"
   role             = aws_iam_role.lambda.arn
   runtime          = "python3.13"
   architectures    = ["arm64"]
@@ -109,9 +109,9 @@ resource "aws_lambda_function" "radar" {
 
   environment {
     variables = {
-      SEEN_TABLE             = aws_dynamodb_table.seen.name
-      TELEGRAM_TOKEN_PARAM   = aws_ssm_parameter.telegram_token.name
-      TELEGRAM_CHAT_ID_PARAM = aws_ssm_parameter.telegram_chat_id.name
+      SEEN_TABLE           = aws_dynamodb_table.seen.name
+      EMAIL_ADDRESS_PARAM  = aws_ssm_parameter.email_address.name
+      EMAIL_PASSWORD_PARAM = aws_ssm_parameter.email_password.name
     }
   }
 

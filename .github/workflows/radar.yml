@@ -1,13 +1,14 @@
 name: Radar on GitHub Actions
 
 # Run it by hand for a dry run, or uncomment the schedule to use it instead of AWS (turn the AWS
-# schedule off first). GitHub pauses scheduled workflows after 60 days without commits.
+# schedule off first, and add the EMAIL_ADDRESS and EMAIL_APP_PASSWORD repository secrets).
+# GitHub pauses scheduled workflows after 60 days without commits.
 
 on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Only print the matches (no Telegram, nothing saved)"
+        description: "Only print the matches (no email, nothing saved)"
         type: boolean
         default: true
   # schedule:
@@ -45,11 +46,11 @@ jobs:
           key: seen-jobs-${{ github.run_id }}
           restore-keys: seen-jobs-
 
-      - name: Send new jobs to Telegram
+      - name: Email new jobs
         if: env.DRY_RUN != 'true'
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
         run: python -m jobradar run --state .state/seen.json
 
       - name: Save the list of jobs already sent

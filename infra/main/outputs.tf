@@ -10,12 +10,12 @@ output "schedule" {
   value = "${var.schedule_expression} in ${var.schedule_timezone}"
 }
 
-output "telegram_token_parameter" {
-  value = aws_ssm_parameter.telegram_token.name
+output "email_address_parameter" {
+  value = aws_ssm_parameter.email_address.name
 }
 
-output "telegram_chat_id_parameter" {
-  value = aws_ssm_parameter.telegram_chat_id.name
+output "email_password_parameter" {
+  value = aws_ssm_parameter.email_password.name
 }
 
 output "test_command" {

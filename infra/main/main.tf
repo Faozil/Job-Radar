@@ -12,31 +12,27 @@ locals {
   )
 }
 
-# Created with a placeholder; the real values are set with the AWS CLI so they stay out of state.
-resource "aws_ssm_parameter" "telegram_token" {
+# Terraform only writes a placeholder. value_wo is write-only, so the real values, set later with
+# the AWS CLI, never end up in the state (a plain value is read back on every refresh).
+# Leave value_wo_version at 1: bumping it writes the placeholder over the real value.
+resource "aws_ssm_parameter" "email_address" {
   #checkov:skip=CKV_AWS_337:SecureString with the AWS managed key; a customer-managed key costs $1 a month
 
-  name        = "/${var.name}/telegram/bot-token"
-  description = "Telegram bot token for ${var.name}"
-  type        = "SecureString"
-  value       = "set-me-with-the-aws-cli"
-
-  lifecycle {
-    ignore_changes = [value]
-  }
+  name             = "/${var.name}/email/address"
+  description      = "Gmail address that sends and receives the ${var.name} digest"
+  type             = "SecureString"
+  value_wo         = "set-me-with-the-aws-cli"
+  value_wo_version = 1
 }
 
-resource "aws_ssm_parameter" "telegram_chat_id" {
+resource "aws_ssm_parameter" "email_password" {
   #checkov:skip=CKV_AWS_337:SecureString with the AWS managed key; a customer-managed key costs $1 a month
 
-  name        = "/${var.name}/telegram/chat-id"
-  description = "Telegram chat that receives the ${var.name} digest"
-  type        = "SecureString"
-  value       = "set-me-with-the-aws-cli"
-
-  lifecycle {
-    ignore_changes = [value]
-  }
+  name             = "/${var.name}/email/app-password"
+  description      = "Gmail app password for ${var.name}"
+  type             = "SecureString"
+  value_wo         = "set-me-with-the-aws-cli"
+  value_wo_version = 1
 }
 
 # Jobs already sent. 5/5 capacity is inside the always-free 25/25; the TTL clears old items.

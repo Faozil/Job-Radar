@@ -16,13 +16,13 @@ variable "name" {
 }
 
 variable "github_repository" {
-  description = "GitHub repository allowed to deploy, as owner/name."
+  description = "GitHub repository allowed to deploy, as owner/name, with the exact case GitHub shows."
   type        = string
-  default     = "Faozil/job-radar"
+  default     = "Faozil/Job-Radar"
 
   validation {
     condition     = can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
-    error_message = "Use the owner/name form, for example Faozil/job-radar."
+    error_message = "Use the owner/name form, for example Faozil/Job-Radar."
   }
 }
 

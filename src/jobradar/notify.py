@@ -1,13 +1,14 @@
-"""Send the digest of new jobs: Telegram in production, the console for dry runs."""
-
 from __future__ import annotations
 
 import html
-import time
+import smtplib
+import ssl
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
+from email.message import EmailMessage
+from email.utils import format_datetime, formataddr, make_msgid
 from typing import Any
 
-from .http import post_json
 from .models import (
     SPONSORSHIP_EXCLUDED,
     SPONSORSHIP_OFFERED,
@@ -22,7 +23,6 @@ SPONSORSHIP_LABELS = {
     SPONSORSHIP_UNKNOWN: "Sponsorship not mentioned",
     SPONSORSHIP_EXCLUDED: "Says no sponsorship",
 }
-TELEGRAM_LIMIT = 3900  # Telegram allows 4096 characters per message; leave some headroom
 
 
 class NotifyError(Exception):
@@ -50,89 +50,109 @@ def details(job: Job) -> str:
     return text
 
 
-def format_job_html(job: Job) -> str:
-    lines = [
-        f"<b>{html.escape(job.title[:200])}</b>",
-        html.escape(f"{job.company[:100]} · {location_summary(job)}"),
-        html.escape(details(job)),
+def footer_lines(extra: int, failed: Sequence[str]) -> list[str]:
+    lines = []
+    if extra:
+        lines.append(f"{extra} more will come in the next run.")
+    if failed:
+        lines.append("Could not read: " + ", ".join(failed))
+    return lines
+
+
+def plain_text(jobs: Sequence[Job], *, extra: int = 0, failed: Sequence[str] = ()) -> str:
+    blocks = [
+        f"{job.title}\n{job.company} · {location_summary(job)}\n{details(job)}\n{job.url}"
+        for job in jobs
     ]
-    if job.url:
-        lines.append(f'<a href="{html.escape(job.url, quote=True)}">Open the job</a>')
-    return "\n".join(lines)
+    return "\n\n".join([*blocks, *footer_lines(extra, failed)]) + "\n"
 
 
-def build_messages(
+def html_text(jobs: Sequence[Job], *, extra: int = 0, failed: Sequence[str] = ()) -> str:
+    parts = []
+    for job in jobs:
+        title = html.escape(job.title)
+        if job.url.startswith(("https://", "http://")):
+            title = f'<a href="{html.escape(job.url, quote=True)}">{title}</a>'
+        place = html.escape(f"{job.company} · {location_summary(job)}")
+        info = html.escape(details(job))
+        parts.append(f'<p><b>{title}</b><br>{place}<br><span style="color:#666">{info}</span></p>')
+    footer = "<br>".join(html.escape(line) for line in footer_lines(extra, failed))
+    if footer:
+        parts.append(f'<p style="color:#666">{footer}</p>')
+    return "<html><body>\n" + "\n".join(parts) + "\n</body></html>\n"
+
+
+def build_email(
     jobs: Sequence[Job],
     *,
+    address: str,
     extra: int = 0,
     failed: Sequence[str] = (),
-    max_len: int = TELEGRAM_LIMIT,
-) -> list[str]:
-    """Build the Telegram digest, split into messages that fit Telegram's size limit."""
+    now: datetime | None = None,
+) -> EmailMessage:
+    now = now or datetime.now(UTC)
     total = len(jobs) + extra
-    header = f"<b>Job Radar</b>: {total} new role{'' if total == 1 else 's'}"
-    footer_lines = []
-    if extra:
-        footer_lines.append(f"{extra} more will come in the next run.")
-    if failed:
-        shown = ", ".join(failed[:5]) + (f" and {len(failed) - 5} more" if len(failed) > 5 else "")
-        footer_lines.append(f"Could not read: {shown}")
-    footer = html.escape("\n".join(footer_lines))
-
-    messages: list[str] = []
-    current = header
-    for block in (format_job_html(job) for job in jobs):
-        if len(current) + 2 + len(block) > max_len:
-            messages.append(current)
-            current = "<b>Job Radar</b> (continued)"
-        current = f"{current}\n\n{block}"
-    if footer:
-        if len(current) + 2 + len(footer) > max_len:
-            messages.append(current)
-            current = footer
-        else:
-            current = f"{current}\n\n{footer}"
-    messages.append(current)
-    return messages
+    # The date keeps Gmail from threading every digest into one conversation.
+    subject = f"Job Radar: {total} new role{'' if total == 1 else 's'} ({now.day} {now:%b})"
+    message = _new_message(address, subject, now)
+    message.set_content(plain_text(jobs, extra=extra, failed=failed))
+    message.add_alternative(html_text(jobs, extra=extra, failed=failed), subtype="html")
+    return message
 
 
-class TelegramNotifier(Notifier):
-    API = "https://api.telegram.org/bot{token}/sendMessage"
+def _new_message(address: str, subject: str, now: datetime) -> EmailMessage:
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = formataddr(("Job Radar", address))
+    message["To"] = address
+    message["Date"] = format_datetime(now)
+    message["Message-ID"] = make_msgid(domain=address.rpartition("@")[2])
+    return message
+
+
+class EmailNotifier(Notifier):
+    """Emails the digest from the address to itself, over SMTP with TLS."""
 
     def __init__(
         self,
-        token: str,
-        chat_id: str,
+        address: str,
+        password: str,
         *,
-        post: Callable[..., Any] = post_json,
-        sleep: Callable[[float], None] = time.sleep,
-        pause_seconds: float = 1.0,
+        host: str = "smtp.gmail.com",
+        port: int = 465,
+        smtp: Callable[..., Any] = smtplib.SMTP_SSL,
+        timeout: float = 30,
     ) -> None:
-        if not token or not chat_id:
-            raise ValueError("A Telegram bot token and chat id are required")
-        self._token = token
-        self._chat_id = str(chat_id)
-        self._post = post
-        self._sleep = sleep
-        self._pause = pause_seconds
+        if "@" not in address or not password:
+            raise ValueError("An email address and an app password are required")
+        self._address = address.strip()
+        self._password = "".join(password.split())  # Google shows app passwords in groups of four
+        self._host = host
+        self._port = port
+        self._smtp = smtp
+        self._timeout = timeout
 
     def send(self, jobs: Sequence[Job], *, extra: int = 0, failed: Sequence[str] = ()) -> None:
-        for index, text in enumerate(build_messages(jobs, extra=extra, failed=failed)):
-            if index:
-                self._sleep(self._pause)  # stay well under Telegram's per-chat rate limit
-            response = self._post(
-                self.API.format(token=self._token),
-                {
-                    "chat_id": self._chat_id,
-                    "text": text,
-                    "parse_mode": "HTML",
-                    "link_preview_options": {"is_disabled": True},
-                },
-                redact=True,
-            )
-            if not isinstance(response, dict) or not response.get("ok"):
-                reason = response.get("description") if isinstance(response, dict) else response
-                raise NotifyError(f"Telegram rejected the message: {reason}")
+        self._deliver(build_email(jobs, address=self._address, extra=extra, failed=failed))
+
+    def send_test(self) -> None:
+        message = _new_message(self._address, "Job Radar test", datetime.now(UTC))
+        message.set_content("Your Job Radar email settings work.\n")
+        self._deliver(message)
+
+    def _deliver(self, message: EmailMessage) -> None:
+        tls = ssl.create_default_context()
+        try:
+            with self._smtp(self._host, self._port, timeout=self._timeout, context=tls) as server:
+                server.login(self._address, self._password)
+                server.send_message(message)
+        except smtplib.SMTPServerDisconnected as exc:
+            # Gmail hangs up, without an error code, on a login for an unknown address.
+            raise NotifyError(
+                "The mail server closed the connection; check the address and app password"
+            ) from exc
+        except (smtplib.SMTPException, OSError) as exc:
+            raise NotifyError(f"Could not send the email: {exc}") from exc
 
 
 class ConsoleNotifier(Notifier):
@@ -143,10 +163,4 @@ class ConsoleNotifier(Notifier):
 
     def send(self, jobs: Sequence[Job], *, extra: int = 0, failed: Sequence[str] = ()) -> None:
         self._write(f"{len(jobs) + extra} new role(s)\n")
-        for job in jobs:
-            self._write(f"{job.title}\n  {job.company} · {location_summary(job)}\n  {details(job)}")
-            self._write(f"  {job.url}\n")
-        if extra:
-            self._write(f"...and {extra} more next run")
-        if failed:
-            self._write("Could not read: " + ", ".join(failed))
+        self._write(plain_text(jobs, extra=extra, failed=failed))

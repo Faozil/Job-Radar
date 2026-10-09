@@ -60,19 +60,18 @@ def test_server_errors_are_retried(monkeypatch):
     assert waits == [1.0, 2.0]
 
 
-def test_telegram_retry_after_is_respected(monkeypatch):
+def test_retry_after_header_is_respected(monkeypatch):
     waits = []
-    install(monkeypatch, http_error(429, {"parameters": {"retry_after": 7}}), {"ok": True})
-    http.post_json("https://example.com", {"a": 1}, sleep=waits.append)
+    install(monkeypatch, http_error(429, headers={"Retry-After": "7"}), {"ok": True})
+    assert http.get_json("https://example.com", sleep=waits.append) == {"ok": True}
     assert waits == [7.0]
 
 
-def test_client_errors_are_not_retried_and_redaction_hides_the_url(monkeypatch):
-    install(monkeypatch, http_error(400, {"description": "Bad Request: chat not found"}))
-    with pytest.raises(http.FetchError) as error:
-        http.post_json("https://api.example.com/botSECRET/send", {"a": 1}, redact=True)
-    assert "chat not found" in str(error.value)
-    assert "SECRET" not in str(error.value)
+def test_client_errors_are_not_retried(monkeypatch):
+    calls = install(monkeypatch, http_error(400, {"message": "unknown board"}))
+    with pytest.raises(http.FetchError, match="HTTP 400 unknown board"):
+        http.get_json("https://example.com/boards/x")
+    assert len(calls) == 1
 
 
 def test_network_errors_give_up_after_retries(monkeypatch):

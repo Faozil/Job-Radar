@@ -6,6 +6,7 @@ import pytest
 
 from conftest import make_job
 from jobradar import cli, handler, metrics
+from jobradar.notify import NotifyError
 from jobradar.pipeline import RunResult
 from jobradar.store import MemoryStore
 
@@ -31,8 +32,8 @@ class RecordingNotifier:
 @pytest.fixture
 def lambda_env(monkeypatch):
     monkeypatch.setenv("SEEN_TABLE", "job-radar-seen-jobs")
-    monkeypatch.setenv("TELEGRAM_TOKEN_PARAM", "/job-radar/telegram/bot-token")
-    monkeypatch.setenv("TELEGRAM_CHAT_ID_PARAM", "/job-radar/telegram/chat-id")
+    monkeypatch.setenv("EMAIL_ADDRESS_PARAM", "/job-radar/email/address")
+    monkeypatch.setenv("EMAIL_PASSWORD_PARAM", "/job-radar/email/app-password")
     monkeypatch.setenv("AWS_LAMBDA_FUNCTION_NAME", "job-radar")
     handler._cache.clear()
     yield
@@ -62,7 +63,7 @@ def test_placeholder_secret_gives_a_clear_error(monkeypatch, lambda_env):
 
     handler._cache["ssm"] = FakeSsm()
     with pytest.raises(handler.SetupError, match="placeholder"):
-        handler._ssm_value("/job-radar/telegram/bot-token")
+        handler._ssm_value("/job-radar/email/app-password")
 
 
 def test_secrets_are_read_once_per_container(monkeypatch, lambda_env):
@@ -71,15 +72,16 @@ def test_secrets_are_read_once_per_container(monkeypatch, lambda_env):
     class FakeSsm:
         def get_parameter(self, Name, WithDecryption):
             calls.append((Name, WithDecryption))
-            return {"Parameter": {"Value": "value-for-" + Name.rsplit("/", 1)[-1]}}
+            value = "me@example.com" if Name.endswith("/address") else "app-password"
+            return {"Parameter": {"Value": value}}
 
     handler._cache["ssm"] = FakeSsm()
     first = handler._notifier()
     second = handler._notifier()
     assert first is second
     assert calls == [
-        ("/job-radar/telegram/bot-token", True),
-        ("/job-radar/telegram/chat-id", True),
+        ("/job-radar/email/address", True),
+        ("/job-radar/email/app-password", True),
     ]
 
 
@@ -104,11 +106,11 @@ def test_cli_dry_run_prints_matches(monkeypatch, capsys):
     assert "new: 1, sent: 1" in output
 
 
-def test_cli_run_without_telegram_settings_fails_fast(monkeypatch, capsys):
-    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
-    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+def test_cli_run_without_email_settings_fails_fast(monkeypatch, capsys):
+    monkeypatch.delenv("EMAIL_ADDRESS", raising=False)
+    monkeypatch.delenv("EMAIL_APP_PASSWORD", raising=False)
     assert cli.main(["run"]) == 2
-    assert "TELEGRAM_BOT_TOKEN" in capsys.readouterr().err
+    assert "EMAIL_ADDRESS" in capsys.readouterr().err
 
 
 def test_cli_check_boards_reports_problems(monkeypatch, capsys):
@@ -129,11 +131,24 @@ def test_cli_check_boards_reports_problems(monkeypatch, capsys):
     assert "NOT FOUND  greenhouse/missing" in output
 
 
-def test_cli_telegram_chat_id(monkeypatch, capsys):
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "fake")
-    updates = {
-        "result": [{"message": {"chat": {"id": 42, "type": "private", "first_name": "Faozil"}}}]
-    }
-    monkeypatch.setattr(cli, "get_json", lambda url, **kwargs: updates)
-    assert cli.main(["telegram-chat-id"]) == 0
-    assert "42  (private Faozil)" in capsys.readouterr().out
+@pytest.fixture
+def email_env(monkeypatch):
+    monkeypatch.setenv("EMAIL_ADDRESS", "me@example.com")
+    monkeypatch.setenv("EMAIL_APP_PASSWORD", "app-password")
+
+
+def test_cli_test_email(monkeypatch, capsys, email_env):
+    sent = []
+    monkeypatch.setattr(cli.EmailNotifier, "send_test", lambda self: sent.append(self))
+    assert cli.main(["test-email"]) == 0
+    assert len(sent) == 1
+    assert "Test email sent" in capsys.readouterr().out
+
+
+def test_cli_test_email_reports_a_failed_login(monkeypatch, capsys, email_env):
+    def refuse(self):
+        raise NotifyError("Could not send the email: login refused")
+
+    monkeypatch.setattr(cli.EmailNotifier, "send_test", refuse)
+    assert cli.main(["test-email"]) == 1
+    assert "login refused" in capsys.readouterr().err

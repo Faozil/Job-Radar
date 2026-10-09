@@ -1,7 +1,7 @@
 PYTHON ?= python3
 export PYTHONPATH := src
 
-.PHONY: install test lint format dry-run check-boards chat-id scan
+.PHONY: install test lint format dry-run check-boards test-email scan
 
 install:
 	$(PYTHON) -m pip install -r requirements-dev.txt
@@ -25,9 +25,9 @@ dry-run:
 check-boards:
 	$(PYTHON) -m jobradar check-boards
 
-# Find your Telegram chat id. Run `read -rs TELEGRAM_BOT_TOKEN && export TELEGRAM_BOT_TOKEN` first.
-chat-id:
-	$(PYTHON) -m jobradar telegram-chat-id
+# Needs EMAIL_ADDRESS and EMAIL_APP_PASSWORD exported (see the README).
+test-email:
+	$(PYTHON) -m jobradar test-email
 
 scan:
 	checkov -d infra --framework terraform --compact --quiet --skip-download

@@ -2,7 +2,7 @@
 
 Twice a day, Job Radar reads the public job boards of companies that hire in visa-friendly European
 countries, keeps the DevOps, SRE, platform and cloud roles, reads each ad for visa and relocation
-signals, and sends only the **new** matches to Telegram.
+signals, and emails you only the **new** matches.
 
 It runs on AWS Lambda, is deployed with Terraform through GitHub Actions (OIDC, no stored keys), and
 stays inside AWS's always-free limits.
@@ -10,17 +10,17 @@ stays inside AWS's always-free limits.
 An example digest (companies made up):
 
 ```text
-Job Radar: 2 new roles
+Subject: Job Radar: 2 new roles (9 Oct)
 
 Site Reliability Engineer
 Northwind Payments · Berlin
 Mentions visa or relocation support
-Open the job
+https://example.com/jobs/123
 
 Platform Engineer, Observability
 Contoso Cloud · Amsterdam
 Sponsorship not mentioned · Asks for Dutch
-Open the job
+https://example.com/jobs/456
 ```
 
 ## Architecture
@@ -31,8 +31,8 @@ flowchart LR
     L -->|fetch| B["Greenhouse, Lever and Ashby<br/>company job boards"]
     L -->|fetch| A["Arbeitnow feed<br/>(Germany)"]
     L <-->|jobs already sent| D[("DynamoDB<br/>TTL 120 days")]
-    P["SSM Parameter Store<br/>SecureString"] -->|bot token, chat id| L
-    L -->|digest| T["Telegram"]
+    P["SSM Parameter Store<br/>SecureString"] -->|Gmail address, app password| L
+    L -->|digest, SMTP over TLS| T["Gmail"]
     L -->|logs and EMF metrics| C["CloudWatch"]
     C -->|run failed| E["SNS email"]
     G["GitHub Actions"] -->|OIDC| R["IAM deploy role<br/>(scoped by name + permissions boundary)"]
@@ -47,8 +47,8 @@ Each run:
 3. Reads each ad sentence by sentence and labels it *mentions visa or relocation support*,
    *unclear*, *not mentioned* or *excludes sponsorship*. Ads that exclude sponsorship, or require an
    existing work permit, are dropped. Ads that ask for German, Dutch and so on are flagged.
-4. Drops jobs already sent (DynamoDB), sends the rest, sponsorship-friendly ads first, and only then
-   records them, so a failed send is retried on the next run.
+4. Drops jobs already sent (DynamoDB), emails the rest, sponsorship-friendly ads first, and only
+   then records them, so a failed email is retried on the next run.
 
 ## What it costs
 
@@ -58,6 +58,7 @@ Each run:
 | DynamoDB | a few hundred reads and writes | 5 RCU / 5 WCU provisioned, inside the always-free 25 / 25 |
 | EventBridge Scheduler | ~60 invocations | Priced per million, rounds to $0.00 |
 | SSM Parameter Store | 2 standard SecureString parameters | No charge for standard parameters; AWS managed KMS key |
+| Gmail SMTP | ~60 emails | Free |
 | CloudWatch | 4 custom metrics, 1 alarm, a few MB of logs (14-day retention) | Always-free tier: 10 metrics, 10 alarms, 5 GB of logs |
 | S3 (Terraform state) | a few KB | Fractions of a cent |
 
@@ -74,29 +75,35 @@ $32 a month), no customer-managed KMS keys ($1 a month each), no point-in-time r
 - **Least-privilege runtime.** The Lambda can write its own logs, read and write one table, and
   read two parameters. Nothing else.
 - **Secrets never touch code, plans or state.** Terraform creates the SSM parameters with a
-  placeholder and ignores their value; the real values are set once with the AWS CLI. Error
-  messages redact the Telegram URL, which contains the token.
+  write-only placeholder (`value_wo`), so the real values, set once with the AWS CLI, are never
+  read back into state. Mail goes out over TLS with certificate checks, using a Gmail app password
+  that can be revoked on its own.
 - **Scanned on every push.** Checkov checks the Terraform (every skipped check has a written reason
   next to the resource), and Trivy scans the repository for secrets and vulnerable dependencies.
 
 ## Setup
 
-You need an AWS account, Terraform 1.10 or newer, Python 3.11 or newer, the AWS CLI and a Telegram
-account. For the one-time setup, sign the CLI in as an IAM user with admin rights and MFA (never
+You need an AWS account, Terraform 1.11 or newer, Python 3.11 or newer, the AWS CLI and a Gmail
+account with 2-Step Verification. For the one-time setup, sign the CLI in as an IAM user with admin rights and MFA (never
 the root user). Once GitHub deploys work, you can delete that user's access keys.
 
 Every service used here is available on AWS's free account plan.
 
-### 1. Create the Telegram bot
+### 1. Create a Gmail app password
 
-1. In Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot` and copy the token.
-   Keep it private.
-2. Send your new bot any message, such as "hi".
-3. Get your chat id without putting the token in your shell history:
+1. Turn on 2-Step Verification for your Google account if it isn't on already, with a phone or an
+   authenticator app as a second step. Until then, the App passwords page says "The setting you
+   are looking for is not available for your account". Work or school accounts may not offer app
+   passwords at all, so use a personal Gmail.
+2. Open [App passwords](https://myaccount.google.com/apppasswords), create one called `job-radar`
+   and copy the 16 characters. Treat it like a password: it gives mail access to the account. You
+   can revoke it on the same page at any time.
+3. Send yourself a test email, without putting the password in your shell history:
 
    ```bash
-   read -rs TELEGRAM_BOT_TOKEN && export TELEGRAM_BOT_TOKEN
-   make chat-id
+   export EMAIL_ADDRESS=you@gmail.com
+   read -rs EMAIL_APP_PASSWORD && export EMAIL_APP_PASSWORD
+   make test-email
    ```
 
 ### 2. Try it locally (no AWS needed)
@@ -110,12 +117,13 @@ make dry-run        # prints what would be sent right now
 ### 3. Bootstrap AWS (once)
 
 Creates the Terraform state bucket, the GitHub OIDC provider, the deploy role and the permissions
-boundary. Use your own `owner/repo`.
+boundary. Use your own `owner/repo`, with the exact case GitHub shows: the deploy role's trust
+policy compares it case-sensitively.
 
 ```bash
 cd infra/bootstrap
 terraform init
-terraform apply -var="github_repository=Faozil/job-radar"
+terraform apply -var="github_repository=Faozil/Job-Radar"
 ```
 
 Its output prints the next commands. Keep `infra/bootstrap/terraform.tfstate`; it is git-ignored.
@@ -132,15 +140,15 @@ terraform -chdir=infra/main apply -var="alert_email=you@example.com"
 AWS emails you a link to confirm the alert subscription. Commit the `.terraform.lock.hcl` files
 that `terraform init` created.
 
-### 5. Store the Telegram settings
+### 5. Store the email settings
 
 ```bash
-read -rs TOKEN
-aws ssm put-parameter --region eu-west-1 --name /job-radar/telegram/bot-token \
-  --type SecureString --overwrite --value "$TOKEN"
-unset TOKEN
-aws ssm put-parameter --region eu-west-1 --name /job-radar/telegram/chat-id \
-  --type SecureString --overwrite --value "<your chat id>"
+aws ssm put-parameter --region eu-west-1 --name /job-radar/email/address \
+  --type SecureString --overwrite --value "you@gmail.com"
+read -rs PASSWORD
+aws ssm put-parameter --region eu-west-1 --name /job-radar/email/app-password \
+  --type SecureString --overwrite --value "$PASSWORD"
+unset PASSWORD
 ```
 
 Run it once to check (the command is also in the Terraform output):
@@ -184,7 +192,7 @@ To add a company, open its careers page and look at where the job links go:
 
 [`.github/workflows/radar.yml`](.github/workflows/radar.yml) runs the same code on GitHub
 Actions, free for public repositories. Start it from the Actions tab for a dry run, or uncomment its
-schedule and add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` as repository secrets to use it
+schedule and add `EMAIL_ADDRESS` and `EMAIL_APP_PASSWORD` as repository secrets to use it
 instead of AWS. It keeps the list of jobs already sent in the Actions cache.
 
 ## Observability
@@ -199,7 +207,8 @@ fields @timestamp, fetched, matched, new, notified, failed
 
 It also publishes `JobsFetched`, `Matches`, `NewJobs` and `BoardErrors` in the `JobRadar` namespace
 through the Embedded Metric Format, which costs no API calls. A failed run raises the
-`job-radar-errors` alarm and sends an email.
+`job-radar-errors` alarm, which emails you through SNS. That path doesn't use Gmail, so a revoked
+app password still gets reported.
 
 ## Development
 
@@ -211,6 +220,7 @@ through the Embedded Metric Format, which costs no API calls. A failed run raise
 | `make scan` | Checkov on the Terraform |
 | `make dry-run` | Print what would be sent right now |
 | `make check-boards` | Check every configured board answers |
+| `make test-email` | Send a test email with your settings |
 
 On Windows, run these inside WSL, or run the commands from the `Makefile` directly with
 `PYTHONPATH=src` set.
@@ -221,7 +231,7 @@ src/jobradar/
   filters.py      title, location, freshness, sponsorship and language rules
   pipeline.py     fetch -> filter -> de-duplicate -> notify -> remember
   store.py        DynamoDB, file and in-memory stores
-  notify.py       Telegram and console notifiers
+  notify.py       email (SMTP) and console notifiers
   handler.py      Lambda entry point
   cli.py          local commands
 infra/bootstrap/  state bucket, GitHub OIDC, deploy role, permissions boundary

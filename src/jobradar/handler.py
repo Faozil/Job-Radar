@@ -7,7 +7,7 @@ from typing import Any
 
 from . import metrics
 from .config import AppConfig, load_config
-from .notify import TelegramNotifier
+from .notify import EmailNotifier
 from .pipeline import run
 from .sources import build_sources
 from .store import DynamoStore
@@ -22,7 +22,7 @@ _cache: dict[str, Any] = {}
 
 
 class SetupError(RuntimeError):
-    """Configuration is incomplete, e.g. the Telegram secrets were never set."""
+    """Configuration is incomplete, e.g. the email settings were never set."""
 
 
 def _ssm_value(name: str) -> str:
@@ -43,11 +43,11 @@ def _config() -> AppConfig:
     return _cache["config"]
 
 
-def _notifier() -> TelegramNotifier:
+def _notifier() -> EmailNotifier:
     if "notifier" not in _cache:
-        _cache["notifier"] = TelegramNotifier(
-            token=_ssm_value(os.environ["TELEGRAM_TOKEN_PARAM"]),
-            chat_id=_ssm_value(os.environ["TELEGRAM_CHAT_ID_PARAM"]),
+        _cache["notifier"] = EmailNotifier(
+            address=_ssm_value(os.environ["EMAIL_ADDRESS_PARAM"]),
+            password=_ssm_value(os.environ["EMAIL_PASSWORD_PARAM"]),
         )
     return _cache["notifier"]
 

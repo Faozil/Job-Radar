@@ -1,4 +1,4 @@
-"""Command line: run the radar locally or on GitHub Actions, check boards, find a chat id."""
+"""Run the radar locally or on GitHub Actions, check the boards, or send a test email."""
 
 from __future__ import annotations
 
@@ -10,13 +10,11 @@ from datetime import UTC, datetime
 
 from .config import load_config
 from .filters import apply_filters
-from .http import NotFoundError, get_json
-from .notify import ConsoleNotifier, Notifier, TelegramNotifier
+from .http import NotFoundError
+from .notify import ConsoleNotifier, EmailNotifier, Notifier, NotifyError
 from .pipeline import run
 from .sources import build_sources
 from .store import FileStore, MemoryStore, SeenStore
-
-TELEGRAM_UPDATES = "https://api.telegram.org/bot{token}/getUpdates"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -24,7 +22,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--config", help="path to job-radar.toml (default: config/job-radar.toml)")
     commands = parser.add_subparsers(dest="command", required=True)
 
-    run_cmd = commands.add_parser("run", help="fetch, filter and send new jobs")
+    run_cmd = commands.add_parser("run", help="fetch, filter and email new jobs")
     run_cmd.add_argument(
         "--dry-run", action="store_true", help="print instead of sending; save nothing"
     )
@@ -34,30 +32,36 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_cmd.add_argument("--all", action="store_true", help="ignore the state file (dry runs only)")
 
     commands.add_parser("check-boards", help="check that every configured board answers")
-    commands.add_parser("telegram-chat-id", help="print chat ids that messaged your bot")
+    commands.add_parser("test-email", help="send a test email with your settings")
 
     args = parser.parse_args(argv)
     if args.command == "run":
         return _run(args)
     if args.command == "check-boards":
         return _check_boards(args)
-    return _telegram_chat_id()
+    return _test_email()
+
+
+def _email_notifier() -> EmailNotifier | None:
+    address = os.environ.get("EMAIL_ADDRESS", "")
+    password = os.environ.get("EMAIL_APP_PASSWORD", "")
+    if not address or not password:
+        print("Set EMAIL_ADDRESS and EMAIL_APP_PASSWORD first (see the README).", file=sys.stderr)
+        return None
+    return EmailNotifier(address, password)
 
 
 def _run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     store: SeenStore = FileStore(args.state)
     if args.dry_run:
-        notifier: Notifier = ConsoleNotifier()
+        notifier: Notifier | None = ConsoleNotifier()
         if args.all:
             store = MemoryStore()
     else:
-        token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-        chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
-        if not token or not chat_id:
-            print("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID, or use --dry-run.", file=sys.stderr)
-            return 2
-        notifier = TelegramNotifier(token, chat_id)
+        notifier = _email_notifier()
+    if notifier is None:
+        return 2
 
     result = run(
         build_sources(config),
@@ -97,22 +101,14 @@ def _check_boards(args: argparse.Namespace) -> int:
     return 1 if problems else 0
 
 
-def _telegram_chat_id() -> int:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    if not token:
-        print("Set TELEGRAM_BOT_TOKEN first (it stays out of your shell history that way).")
+def _test_email() -> int:
+    notifier = _email_notifier()
+    if notifier is None:
         return 2
-    response = get_json(TELEGRAM_UPDATES.format(token=token), redact=True)
-    chats = {}
-    for update in response.get("result") or []:
-        message = update.get("message") or update.get("channel_post") or {}
-        chat = message.get("chat") or {}
-        if "id" in chat:
-            name = chat.get("title") or chat.get("username") or chat.get("first_name") or ""
-            chats[chat["id"]] = f"{chat.get('type', 'chat')} {name}".strip()
-    if not chats:
-        print("No messages yet. Send your bot any message (for example 'hi') and run this again.")
+    try:
+        notifier.send_test()
+    except NotifyError as exc:
+        print(exc, file=sys.stderr)
         return 1
-    for chat_id, description in chats.items():
-        print(f"{chat_id}  ({description})")
+    print("Test email sent. Check your inbox.")
     return 0
