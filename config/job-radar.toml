@@ -2,20 +2,83 @@
 
 max_per_run = 30  # the rest wait for the next run
 
+# Company job boards. Take the id from the job links on the careers page:
+#   job-boards.greenhouse.io/<id>    source = "greenhouse"
+#   jobs.lever.co/<id>               source = "lever" (jobs.eu.lever.co: add region = "eu")
+#   jobs.ashbyhq.com/<id>            source = "ashby"
+#   jobs.smartrecruiters.com/<id>    source = "smartrecruiters"
+boards = [
+  # Germany
+  { source = "greenhouse", id = "n26", name = "N26" },
+  { source = "greenhouse", id = "getyourguide", name = "GetYourGuide" },
+  { source = "greenhouse", id = "celonis", name = "Celonis" },
+  { source = "greenhouse", id = "sumup", name = "SumUp" },
+  { source = "greenhouse", id = "hellofresh", name = "HelloFresh" },
+  { source = "greenhouse", id = "wolt", name = "Wolt" },
+  { source = "greenhouse", id = "contentful", name = "Contentful" },
+  { source = "greenhouse", id = "trivago", name = "trivago" },
+  { source = "greenhouse", id = "flix", name = "Flix" },
+  { source = "greenhouse", id = "ionos", name = "IONOS" },
+  { source = "greenhouse", id = "jetbrains", name = "JetBrains" },
+  { source = "ashby", id = "n8n", name = "n8n" },
+
+  # Netherlands and Ireland
+  { source = "greenhouse", id = "adyen", name = "Adyen" },
+  { source = "greenhouse", id = "stripe", name = "Stripe" },
+  { source = "greenhouse", id = "intercom", name = "Intercom" },
+  { source = "greenhouse", id = "datadog", name = "Datadog" },
+  { source = "greenhouse", id = "cloudflare", name = "Cloudflare" },
+  { source = "greenhouse", id = "databricks", name = "Databricks" },
+  { source = "greenhouse", id = "toast", name = "Toast" },
+  { source = "greenhouse", id = "okta", name = "Okta" },
+  { source = "greenhouse", id = "mongodb", name = "MongoDB" },
+
+  # Lithuania
+  { source = "greenhouse", id = "robinhood", name = "Robinhood" },
+  { source = "lever", id = "oxylabs", name = "Oxylabs" },
+  { source = "ashby", id = "hostinger", name = "Hostinger" },
+  { source = "smartrecruiters", id = "Wix2", name = "Wix" },
+
+  # Romania
+  { source = "smartrecruiters", id = "BoschGroup", name = "Bosch" },
+  { source = "smartrecruiters", id = "Endava", name = "Endava" },
+  { source = "smartrecruiters", id = "Continental", name = "Continental" },
+  { source = "smartrecruiters", id = "Ubisoft2", name = "Ubisoft" },
+
+  # Poland
+  { source = "lever", id = "palantir", name = "Palantir" },
+
+  # Remote-first, hiring across EMEA or worldwide
+  { source = "greenhouse", id = "canonical", name = "Canonical" },
+  { source = "greenhouse", id = "gitlab", name = "GitLab" },
+  { source = "greenhouse", id = "grafanalabs", name = "Grafana Labs" },
+  { source = "greenhouse", id = "elastic", name = "Elastic" },
+  { source = "ashby", id = "supabase", name = "Supabase" },
+  { source = "ashby", id = "clickhouse", name = "ClickHouse" },
+]
+
 [filters]
-max_age_days = 45
+max_age_days = 45  # feeds only: company boards list open jobs, some for years
 drop_if_sponsorship_excluded = true
+skip_german_ads = true
 
 # Python regexes, case-insensitive. A title needs one include match and no exclude match.
+# Junior, mid and senior roles all pass; staff level and above don't.
 title_include = [
   '\bdev\s?-?(sec)?ops\b',
+  '\b(ml|llm)\s?-?ops\b',
   '\bsite[\s-]reliability\b',
   '\bsre\b',
   '\bplatform\s+(engineer|engineering|reliability|infrastructure)',
   '\binfrastructure\s+(engineer|developer|platform|operations|automation)',
-  '\bcloud\s+(security\s+)?(engineer|infrastructure|platform|operations|support\s+engineer|field\s+engineer|developer)',
+  '\bcloud\s+(security\s+)?(engineer|infrastructure|platform|operations|support\s+engineer|field\s+engineer|developer|architect)',
+  '\b(aws|azure|gcp|google\s+cloud)\s+(cloud\s+)?(engineer|architect|administrator|specialist)\b',
   '\bengineer\b[^|]*\binfrastructure\b',
-  '\b(linux|systems?)[\s-]?(engineer|administrator)\b',
+  '\b(linux|unix|systems?)[\s-]?administrator\b',
+  '\bsysadmin\b',
+  '^(?=.*\blinux\b).*\b(engineer|specialist)\b',
+  # "Systems engineer" on its own is often aerospace or medical work, so it needs an IT word too.
+  '^(?=.*\b(it|linux|unix|windows|cloud|infrastructure|network|networking|hosting|web|platform|servers?|storage|devops|vmware|email)\b).*\bsystems?[\s-]?engineer\b',
   '\b(kubernetes|k8s)\b',
   '\b(release|build|ci/?cd)\s+engineer',
   '\b(production|observability|reliability)\s+engineer\b',
@@ -26,19 +89,41 @@ title_exclude = [
   '\b(head|director|vp|vice\s+president|chief)\b',
   '\bmanager\b',
   '\b(intern|internship|working\s+student|werkstudent|praktik\w*|apprentice\w*)\b',
-  '\b(sales|account\s+executive|business\s+development|alliances?|marketing|recruit\w*)\b',
-  '\b(embedded|firmware|hardware|electrical|mechanical)\b',
+  '\b(freelance|freelancer)\b',  # self-employed work comes with no visa
+  '\b(sales|presales|pre-sales|account\s+executive|business\s+development|alliances?|marketing|recruit\w*)\b',
+  '\bsolutions?\s+(engineer|architect|consultant)\b',
+  '\b(embedded|firmware|hardware|electrical|mechanical|avionics|aerospace)\b',
+  '\b(mobile|ios|android|react\s+native|frontend|front-end)\b',
 ]
 
-# On-site, hybrid and country-limited remote roles must mention one of these.
+# On-site, hybrid and country-limited remote roles must mention one of these. Some place names
+# are left out because they also exist elsewhere: Cambridge (MA), York (New York), Wales (New
+# South Wales). Jobs there still match through "uk" or "united kingdom".
 locations = [
+  # Germany
   "germany", "deutschland", "berlin", "munich", "münchen", "hamburg", "frankfurt", "cologne",
-  "köln", "düsseldorf", "stuttgart", "leipzig",
-  "netherlands", "amsterdam", "rotterdam", "utrecht", "eindhoven", "the hague",
-  "ireland", "dublin", "cork",
-  "lithuania", "vilnius", "kaunas",
+  "köln", "düsseldorf", "stuttgart", "leipzig", "dresden", "hanover", "hannover", "nuremberg",
+  "nürnberg", "karlsruhe", "essen", "dortmund", "bonn", "bremen", "mannheim", "heidelberg",
+  "darmstadt", "aachen", "münster", "wiesbaden", "mainz", "augsburg", "freiburg", "regensburg",
+  "potsdam", "erlangen", "ingolstadt", "ulm", "walldorf", "braunschweig", "kiel", "jena",
+  # Netherlands
+  "netherlands", "amsterdam", "rotterdam", "utrecht", "eindhoven", "the hague", "den haag",
+  "delft", "leiden", "groningen", "haarlem", "amersfoort", "nijmegen",
+  # Ireland
+  "ireland", "dublin", "cork", "galway", "limerick",
+  # Lithuania
+  "lithuania", "vilnius", "kaunas", "klaipeda", "klaipėda",
+  # Romania
   "romania", "bucharest", "bucurești", "cluj", "iasi", "iași", "timisoara", "timișoara",
+  "brasov", "brașov", "sibiu", "oradea",
+  # Poland
   "poland", "warsaw", "warszawa", "krakow", "kraków", "wroclaw", "wrocław", "gdansk", "gdańsk",
+  "poznan", "poznań", "lodz", "łódź", "katowice", "gdynia", "lublin",
+  # United Kingdom (Northern Ireland already matches "ireland")
+  "united kingdom", "uk", "great britain", "england", "scotland", "london", "manchester",
+  "edinburgh", "glasgow", "cardiff", "swansea", "belfast", "leeds", "bristol", "birmingham",
+  "sheffield", "nottingham", "liverpool", "newcastle upon tyne", "aberdeen", "dundee",
+  "milton keynes", "southampton",
 ]
 
 # Fully remote roles must mention one of these. Not "europe": those usually need EU residence.
@@ -47,100 +132,17 @@ remote_regions = ["worldwide", "anywhere", "global", "emea", "africa", "nigeria"
 # Flagged in the digest, not dropped.
 flag_languages = ["german", "dutch", "lithuanian", "romanian", "polish"]
 
-[arbeitnow]
-enabled = true
+# Job feeds that list many employers. Set enabled = false to turn one off.
+[feeds.arbeitnow]
 pages = 3
 
-# Company boards. Take the id from the job links on the careers page:
-#   job-boards.greenhouse.io/<id>  ->  source = "greenhouse"
-#   jobs.lever.co/<id>             ->  source = "lever" (jobs.eu.lever.co: add region = "eu")
-#   jobs.ashbyhq.com/<id>          ->  source = "ashby"
+# Germany's federal job board, without recruitment and temp agencies.
+[feeds.bundesagentur]
+searches = ["DevOps", "Site Reliability", "Cloud Engineer", "Platform Engineer", "Kubernetes", "Infrastructure Engineer", "Linux Administrator"]
+days = 1  # ads since yesterday; the API only takes 0, 1, 7, 14 or 28
 
-# Germany
-[[boards]]
-source = "greenhouse"
-id = "n26"
-name = "N26"
+[feeds.jobicy]
+tags = ["devops", "sre", "kubernetes", "cloud"]
 
-[[boards]]
-source = "greenhouse"
-id = "getyourguide"
-name = "GetYourGuide"
-
-[[boards]]
-source = "greenhouse"
-id = "celonis"
-name = "Celonis"
-
-[[boards]]
-source = "greenhouse"
-id = "sumup"
-name = "SumUp"
-
-[[boards]]
-source = "greenhouse"
-id = "hellofresh"
-name = "HelloFresh"
-
-[[boards]]
-source = "greenhouse"
-id = "wolt"
-name = "Wolt"
-
-[[boards]]
-source = "greenhouse"
-id = "contentful"
-name = "Contentful"
-
-# Netherlands and Ireland
-[[boards]]
-source = "greenhouse"
-id = "adyen"
-name = "Adyen"
-
-[[boards]]
-source = "greenhouse"
-id = "stripe"
-name = "Stripe"
-
-[[boards]]
-source = "greenhouse"
-id = "intercom"
-name = "Intercom"
-
-[[boards]]
-source = "greenhouse"
-id = "datadog"
-name = "Datadog"
-
-[[boards]]
-source = "greenhouse"
-id = "cloudflare"
-name = "Cloudflare"
-
-# Lithuania (Vilnius office)
-[[boards]]
-source = "greenhouse"
-id = "robinhood"
-name = "Robinhood"
-
-# Remote-first, hiring across EMEA or worldwide
-[[boards]]
-source = "greenhouse"
-id = "canonical"
-name = "Canonical"
-
-[[boards]]
-source = "greenhouse"
-id = "gitlab"
-name = "GitLab"
-
-[[boards]]
-source = "greenhouse"
-id = "grafanalabs"
-name = "Grafana Labs"
-
-[[boards]]
-source = "greenhouse"
-id = "elastic"
-name = "Elastic"
+[feeds.weworkremotely]
+enabled = true

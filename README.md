@@ -1,8 +1,9 @@
 # Job Radar
 
 Twice a day, Job Radar reads the public job boards of companies that hire in visa-friendly European
-countries, keeps the DevOps, SRE, platform and cloud roles, reads each ad for visa and relocation
-signals, and emails you only the **new** matches.
+countries, Germany's federal job board and a few remote-job feeds. It keeps the DevOps, SRE,
+platform and cloud roles, reads each ad for visa and relocation signals, and emails you only the
+**new** matches.
 
 It runs on AWS Lambda, is deployed with Terraform through GitHub Actions (OIDC, no stored keys), and
 stays inside AWS's always-free limits.
@@ -28,8 +29,8 @@ https://example.com/jobs/456
 ```mermaid
 flowchart LR
     S["EventBridge Scheduler<br/>08:00 and 18:00, Africa/Lagos"] --> L["Lambda: job-radar<br/>Python 3.13, arm64"]
-    L -->|fetch| B["Greenhouse, Lever and Ashby<br/>company job boards"]
-    L -->|fetch| A["Arbeitnow feed<br/>(Germany)"]
+    L -->|fetch| B["Greenhouse, Lever, Ashby, SmartRecruiters<br/>company job boards"]
+    L -->|fetch| A["Bundesagentur für Arbeit, Arbeitnow<br/>We Work Remotely, Jobicy"]
     L <-->|jobs already sent| D[("DynamoDB<br/>TTL 120 days")]
     P["SSM Parameter Store<br/>SecureString"] -->|Gmail address, app password| L
     L -->|digest, SMTP over TLS| T["Gmail"]
@@ -41,20 +42,23 @@ flowchart LR
 
 Each run:
 
-1. Fetches every configured board in parallel. A board that is down is reported, not fatal.
+1. Fetches every board and feed in parallel. One that is down is reported, not fatal.
 2. Keeps roles whose **title** matches (DevOps, SRE, platform, cloud...) and whose **location** is in
-   a target country, or that are remote for EMEA or worldwide.
-3. Reads each ad sentence by sentence and labels it *mentions visa or relocation support*,
-   *unclear*, *not mentioned* or *excludes sponsorship*. Ads that exclude sponsorship, or require an
-   existing work permit, are dropped. Ads that ask for German, Dutch and so on are flagged.
-4. Drops jobs already sent (DynamoDB), emails the rest, sponsorship-friendly ads first, and only
-   then records them, so a failed email is retried on the next run.
+   a target country, or that are remote for EMEA or worldwide, and drops jobs already sent
+   (DynamoDB).
+3. Reads each remaining ad sentence by sentence and labels it *mentions visa or relocation
+   support*, *unclear*, *not mentioned* or *excludes sponsorship*. Some feeds only list titles, so
+   their full ads are fetched at this point, for these few jobs only. Ads that exclude sponsorship,
+   require an existing work permit or are written in German are dropped. Ads that ask for German,
+   Dutch and so on are flagged.
+4. Emails the rest, sponsorship-friendly ads first, and only then records them, so a failed email
+   is retried on the next run.
 
 ## What it costs
 
 | Service | Use per month | Cost |
 |---|---|---|
-| Lambda | ~60 runs of a few seconds | Always-free tier: 1M requests, 400,000 GB-seconds |
+| Lambda | ~60 runs of about 30 seconds at 512 MB (~900 GB-seconds) | Always-free tier: 1M requests, 400,000 GB-seconds |
 | DynamoDB | a few hundred reads and writes | 5 RCU / 5 WCU provisioned, inside the always-free 25 / 25 |
 | EventBridge Scheduler | ~60 invocations | Priced per million, rounds to $0.00 |
 | SSM Parameter Store | 2 standard SecureString parameters | No charge for standard parameters; AWS managed KMS key |
@@ -175,8 +179,8 @@ environment under **Settings > Environments**.
 
 ## Configuration
 
-Everything lives in [`config/job-radar.toml`](config/job-radar.toml): the boards, the title
-patterns, the locations, the remote regions and the languages to flag. Edit it, check it with
+Everything lives in [`config/job-radar.toml`](config/job-radar.toml): the boards, the feeds, the
+title patterns, the locations, the remote regions and the languages to flag. Edit it, check it with
 `make check-boards` and `make dry-run`, then push.
 
 To add a company, open its careers page and look at where the job links go:
@@ -187,6 +191,38 @@ To add a company, open its careers page and look at where the job links go:
 | `jobs.lever.co/<id>` | `source = "lever"`, `id = "<id>"` |
 | `jobs.eu.lever.co/<id>` | `source = "lever"`, `id = "<id>"`, `region = "eu"` |
 | `jobs.ashbyhq.com/<id>` | `source = "ashby"`, `id = "<id>"` |
+| `jobs.smartrecruiters.com/<id>` | `source = "smartrecruiters"`, `id = "<id>"` |
+
+The feeds each have a `[feeds.<name>]` section and can be switched off with `enabled = false`:
+
+| Feed | What it adds |
+|---|---|
+| `bundesagentur` | Germany's federal job board, without recruitment and temp agencies. Not an official API: it is the one the agency's own site uses, [documented by bundesAPI](https://github.com/bundesAPI/jobsuche-api). |
+| `arbeitnow` | A German job board aggregator |
+| `weworkremotely` | Remote DevOps and sysadmin jobs (RSS) |
+| `jobicy` | Remote jobs by tag |
+
+`skip_german_ads = true` drops ads written in German, which is most of what the federal job board
+lists.
+
+A few rules worth knowing:
+
+- Junior, mid and senior roles pass. Staff level and above, managers, interns and freelance roles
+  don't.
+- `max_age_days` only applies to the feeds. Company boards only list open jobs, and some keep a
+  role open for years, so an age limit there would hide real openings.
+- "Systems Engineer" only counts with an IT word in the title, because on its own it is often
+  aerospace or medical-device work.
+- Some place names are left out because they exist in other countries too, such as Cambridge
+  (Massachusetts) and Wales (New South Wales). Jobs there still match through "UK" or "United
+  Kingdom".
+
+### Why not LinkedIn, Indeed or Glassdoor?
+
+None of them has a public job search API. Indeed closed its publisher API to new developers, Glassdoor
+closed its API to new partners, and LinkedIn's job APIs are for approved partners posting jobs, not
+for reading them. All three forbid scraping in their terms. Their own email alerts cover them better
+than a scraper would.
 
 ## Running without AWS
 
@@ -219,7 +255,7 @@ app password still gets reported.
 | `make format` | Fix formatting |
 | `make scan` | Checkov on the Terraform |
 | `make dry-run` | Print what would be sent right now |
-| `make check-boards` | Check every configured board answers |
+| `make check-boards` | Check every board and feed answers, and count its candidates |
 | `make test-email` | Send a test email with your settings |
 
 On Windows, run these inside WSL, or run the commands from the `Makefile` directly with
@@ -227,9 +263,9 @@ On Windows, run these inside WSL, or run the commands from the `Makefile` direct
 
 ```text
 src/jobradar/
-  sources/        Greenhouse, Lever, Ashby and Arbeitnow adapters
+  sources/        one adapter per board or feed
   filters.py      title, location, freshness, sponsorship and language rules
-  pipeline.py     fetch -> filter -> de-duplicate -> notify -> remember
+  pipeline.py     fetch -> filter -> skip seen -> read ads -> classify -> notify -> remember
   store.py        DynamoDB, file and in-memory stores
   notify.py       email (SMTP) and console notifiers
   handler.py      Lambda entry point
@@ -242,7 +278,7 @@ tests/            unit tests
 
 ## Roadmap
 
-- More sources: Workday and SmartRecruiters boards, and an Indeed adapter
+- More sources: Workday boards, and EURES (the EU job portal) if it gets a public API
 - A weekly summary of how many matching roles each company posted
 - `terraform test` coverage for the IAM boundary rules
 

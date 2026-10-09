@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from .config import load_config
-from .filters import apply_filters
+from .filters import prefilter
 from .http import NotFoundError
 from .notify import ConsoleNotifier, EmailNotifier, Notifier, NotifyError
 from .pipeline import run
@@ -95,8 +95,8 @@ def _check_boards(args: argparse.Namespace) -> int:
             print(f"ERROR      {source.label}: {exc}")
             problems += 1
             continue
-        matches = apply_filters(jobs, config.filters, now=now)
-        print(f"OK         {source.label:<32} {len(jobs):>4} jobs {len(matches):>3} matches")
+        candidates = prefilter(jobs, config.filters, now=now)
+        print(f"OK         {source.label:<32} {len(jobs):>4} jobs {len(candidates):>3} candidates")
     print(f"\n{problems} board(s) need attention" if problems else "\nAll boards answered")
     return 1 if problems else 0
 

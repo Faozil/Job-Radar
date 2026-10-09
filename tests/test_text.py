@@ -31,3 +31,9 @@ def test_parse_datetime_formats():
 def test_unique_and_normalise():
     assert unique(["Berlin", " berlin ", None, "", "Remote,  EMEA"]) == ["Berlin", "Remote, EMEA"]
     assert normalise("Grafana Labs") == normalise("grafanalabs") == "grafanalabs"
+
+
+def test_parse_datetime_reads_rss_dates():
+    expected = datetime(2026, 10, 6, 10, tzinfo=UTC)
+    assert parse_datetime("Tue, 06 Oct 2026 10:00:00 +0000") == expected
+    assert parse_datetime("Tue, 06 Oct 2026 11:00:00 +0100") == expected

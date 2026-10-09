@@ -4,6 +4,7 @@ import html
 import re
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 _BLOCK_TAG_RE = re.compile(r"</?(?:p|div|br|li|ul|ol|h[1-6]|tr|section)\b[^>]*>", re.IGNORECASE)
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -25,7 +26,7 @@ def html_to_text(value: str | None) -> str:
 
 
 def parse_datetime(value: object) -> datetime | None:
-    """Parse ISO 8601 strings and Unix timestamps (seconds or milliseconds) to aware datetimes."""
+    """Parse ISO 8601 and RSS (RFC 822) dates and Unix timestamps (s or ms) to aware datetimes."""
     if value is None or value == "" or isinstance(value, bool):
         return None
     if isinstance(value, int | float):
@@ -34,13 +35,16 @@ def parse_datetime(value: object) -> datetime | None:
             return datetime.fromtimestamp(seconds, tz=UTC)
         except (OverflowError, OSError, ValueError):
             return None
-    if isinstance(value, str):
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
         try:
-            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
-        except ValueError:
+            parsed = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
             return None
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-    return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def unique(values: Iterable[object]) -> list[str]:

@@ -8,6 +8,9 @@ SPONSORSHIP_UNCLEAR = "unclear"
 SPONSORSHIP_UNKNOWN = "not mentioned"
 SPONSORSHIP_EXCLUDED = "excluded"
 
+# Sources that list many employers, as opposed to one company's own board.
+FEEDS = frozenset({"arbeitnow", "bundesagentur", "weworkremotely", "jobicy"})
+
 
 @dataclass
 class Job:

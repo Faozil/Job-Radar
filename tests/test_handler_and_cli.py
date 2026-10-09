@@ -20,6 +20,9 @@ class StaticSource:
     def fetch(self):
         return list(self._jobs)
 
+    def describe(self, jobs):
+        return jobs
+
 
 class RecordingNotifier:
     def __init__(self):

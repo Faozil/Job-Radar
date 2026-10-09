@@ -13,15 +13,21 @@ FILTERS = FilterConfig.from_lists(title_include=["devops", "sre"], locations=["b
 
 
 class FakeSource:
-    def __init__(self, label, jobs=None, error=None):
+    def __init__(self, label, jobs=None, error=None, describe=None):
         self.label = label
+        self.described = []
         self._jobs = jobs or []
         self._error = error
+        self._describe = describe
 
     def fetch(self):
         if self._error:
             raise self._error
         return list(self._jobs)
+
+    def describe(self, jobs):
+        self.described.extend(jobs)
+        return self._describe(jobs) if self._describe else jobs
 
 
 class FakeNotifier:
@@ -146,3 +152,57 @@ def test_nothing_new_sends_nothing():
     result = run([FakeSource("greenhouse/acme", [])], FILTERS, MemoryStore(), notifier, now=NOW)
     assert result.notified == 0
     assert notifier.calls == []
+
+
+def test_ad_text_is_read_only_for_jobs_that_could_be_sent():
+    already_sent = make_job(job_id="3", title="SRE")
+    store = MemoryStore()
+    store.mark_seen([already_sent], NOW)
+    source = FakeSource(
+        "greenhouse/acme", [make_job(job_id="1"), make_job(job_id="2", title="Chef"), already_sent]
+    )
+    result = run([source], FILTERS, store, FakeNotifier(), now=NOW)
+    assert [job.job_id for job in source.described] == ["1"]
+    assert (result.matched, result.new) == (2, 1)
+
+
+def test_a_failed_ad_lookup_is_reported_and_retried_next_run():
+    def broken(jobs):
+        raise FetchError("details are down")
+
+    job = make_job(source="bundesagentur", board="de")
+    store, notifier = MemoryStore(), FakeNotifier()
+    source = FakeSource("bundesagentur/de", [job], describe=broken)
+    result = run([source], FILTERS, store, notifier, now=NOW)
+    assert result.failed == ["bundesagentur/de"]
+    assert "could not read the ads" in result.errors["bundesagentur/de"]
+    assert notifier.calls == []
+    assert store.items == {}
+
+
+def test_ads_are_classified_after_their_text_arrives():
+    filters = FilterConfig.from_lists(
+        title_include=["devops"], locations=["berlin"], skip_german_ads=True
+    )
+    german = (
+        "Wir suchen für unser Team eine Person, die mit uns die Plattform weiterentwickelt. "
+        "Du arbeitest mit Kubernetes und Terraform und bist für die Automatisierung der "
+        "Infrastruktur zuständig. Wir bieten dir ein Umfeld, in dem du mit uns wächst und "
+        "die Zukunft der Firma mitgestaltest. Das ist nicht nur ein Job, sondern eine Chance "
+        "für dich und für uns. Bei uns bekommst du eine faire Bezahlung und ein tolles Team."
+    )
+
+    def fill(jobs):
+        jobs[0].description = german
+        jobs[1].description = "We offer visa sponsorship."
+        return jobs
+
+    jobs = [
+        make_job(source="bundesagentur", board="de", job_id=n, title=f"DevOps {n}", description="")
+        for n in ("1", "2")
+    ]
+    notifier = FakeNotifier()
+    source = FakeSource("bundesagentur/de", jobs, describe=fill)
+    run([source], filters, MemoryStore(), notifier, now=NOW)
+    [sent] = notifier.calls[0]["jobs"]
+    assert (sent.job_id, sent.sponsorship) == ("2", "offered")

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from .models import (
+    FEEDS,
     SPONSORSHIP_EXCLUDED,
     SPONSORSHIP_OFFERED,
     SPONSORSHIP_UNCLEAR,
@@ -14,6 +15,7 @@ from .models import (
 )
 
 REMOTE_WORDS = ("remote", "home based", "home-based", "work from home", "anywhere", "distributed")
+GERMAN_AD = "Ad is in German"
 
 # Sentences that rule sponsorship out.
 _NEGATIVE = re.compile(
@@ -25,7 +27,12 @@ _NEGATIVE = re.compile(
             r"\bdo(?:es)?\s*(?:not|n't)\s+(?:offer|provide|support)\s+(?:\w+\s+){0,3}?"
             r"(?:visa\s+)?(?:sponsorship|relocation)",
             r"\bdo(?:es)?\s*(?:not|n't)\s+sponsor",
-            r"\bwithout\s+(?:the\s+need\s+for\s+)?(?:visa\s+|work\s+permit\s+)?sponsorship",
+            # "...without sponsorship for an export license" is about US export law, not visas.
+            r"\bwithout\s+(?:the\s+need\s+for\s+)?(?:(?:new|any|further)\s+)?"
+            r"(?:visa\s+|work\s+permit\s+)?sponsorship(?!\s+for\s+an?\s+export)",
+            r"\b(?:not\s+eligible|ineligible)\s+for\s+(?:(?:visa|immigration|work\s+permit)\s+)?"
+            r"sponsorship",
+            r"\bnot\s+(?:a\s+)?(?:licen[cs]ed|registered)\s+(?:visa\s+)?sponsor",
             r"\bsponsorship\s+(?:is\s+)?(?:not|unavailable)\b",
             r"\b(?:eu|eea|uk|us)\s+(?:citizens?|nationals?|residents?)\s+only",
             r"\bmust\s+(?:already\s+)?(?:have|hold|possess)\s+(?:a\s+|an\s+|the\s+)?"
@@ -34,6 +41,9 @@ _NEGATIVE = re.compile(
             r"\bmust\s+(?:already\s+)?(?:have|hold|possess)\s+(?:a\s+|an\s+)?(?:valid\s+|existing\s+)?"
             r"(?:eu\s+|german\s+|dutch\s+|irish\s+|uk\s+)?work\s+permit",
             r"\bmust\s+be\s+(?:legally\s+)?(?:authori[sz]ed|eligible|entitled|permitted)\s+to\s+work",
+            r"\bmust\s+be\s+work\s+authori[sz]ed",
+            r"\bneed\s+(?:to\s+have\s+)?(?:the\s+)?(?:independent\s+|full\s+|existing\s+)?"
+            r"right\s+to\s+work",
             r"\brequires?\s+(?:a\s+|an\s+)?(?:valid\s+|existing\s+|current\s+)?(?:eu\s+)?work\s+"
             r"(?:permit|authori[sz]ation)",
             r"\bno\s+relocation",
@@ -54,6 +64,7 @@ _POSITIVE = re.compile(
             r"\brelocation\s+(?:package|support|assistance|bonus|budget|allowance|help)",
             r"\b(?:help|support|assist)\s+(?:you\s+)?(?:with\s+)?(?:your\s+)?relocat",
             r"\bblue\s+card\b",
+            r"\b(?:tier\s*2|skilled\s+worker)\s+(?:visa\s+)?sponsor",  # UK work visas
             r"\bimmigration\s+(?:support|assistance|lawyer|partner|advice)",
             r"\bwe\s+(?:can\s+|will\s+|do\s+)?(?:also\s+)?sponsor\b",
         ]
@@ -97,6 +108,7 @@ class FilterConfig:
     flag_languages: tuple[tuple[str, re.Pattern[str]], ...] = ()
     max_age_days: int | None = 45
     drop_if_sponsorship_excluded: bool = True
+    skip_german_ads: bool = False
 
     @classmethod
     def from_lists(
@@ -109,6 +121,7 @@ class FilterConfig:
         flag_languages: Iterable[str] = (),
         max_age_days: int | None = 45,
         drop_if_sponsorship_excluded: bool = True,
+        skip_german_ads: bool = False,
     ) -> FilterConfig:
         return cls(
             title_include=tuple(_regex(pattern) for pattern in title_include),
@@ -118,24 +131,38 @@ class FilterConfig:
             flag_languages=tuple((lang.lower(), _language(lang)) for lang in flag_languages),
             max_age_days=int(max_age_days) if max_age_days else None,
             drop_if_sponsorship_excluded=bool(drop_if_sponsorship_excluded),
+            skip_german_ads=bool(skip_german_ads),
         )
 
 
 def apply_filters(
     jobs: Iterable[Job], config: FilterConfig, now: datetime | None = None
 ) -> list[Job]:
-    """Return the jobs that match, with sponsorship and flags filled in."""
+    return classify(prefilter(jobs, config, now=now), config)
+
+
+def prefilter(jobs: Iterable[Job], config: FilterConfig, now: datetime | None = None) -> list[Job]:
+    """Title, location and age: everything that can be checked without the ad text."""
     now = now or datetime.now(UTC)
-    matched: list[Job] = []
+    return [
+        job
+        for job in jobs
+        if title_ok(job, config) and location_ok(job, config) and is_fresh(job, config, now)
+    ]
+
+
+def classify(jobs: Iterable[Job], config: FilterConfig) -> list[Job]:
+    """Read each ad for visa signals and languages, and drop the ones the config rules out."""
+    kept: list[Job] = []
     for job in jobs:
-        if not (title_ok(job, config) and location_ok(job, config) and is_fresh(job, config, now)):
-            continue
         job.sponsorship = classify_sponsorship(job.description)
         if job.sponsorship == SPONSORSHIP_EXCLUDED and config.drop_if_sponsorship_excluded:
             continue
         job.flags = language_flags(job.description, config)
-        matched.append(job)
-    return matched
+        if config.skip_german_ads and GERMAN_AD in job.flags:
+            continue
+        kept.append(job)
+    return kept
 
 
 def title_ok(job: Job, config: FilterConfig) -> bool:
@@ -156,7 +183,8 @@ def location_ok(job: Job, config: FilterConfig) -> bool:
 
 
 def is_fresh(job: Job, config: FilterConfig, now: datetime) -> bool:
-    if config.max_age_days is None or job.published_at is None:
+    # Company boards only list open jobs, and some keep a role open for years. Feeds keep old ads.
+    if config.max_age_days is None or job.published_at is None or job.source not in FEEDS:
         return True
     return now - job.published_at <= timedelta(days=config.max_age_days)
 
@@ -186,7 +214,7 @@ def language_flags(description: str, config: FilterConfig) -> list[str]:
         if pattern.search(description or "")
     ]
     if _looks_german(description):
-        flags.append("Ad is in German")
+        flags.append(GERMAN_AD)
     return flags
 
 

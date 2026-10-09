@@ -4,13 +4,10 @@ import json
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
-HEADERS = {
-    "User-Agent": "job-radar/0.1 (+https://github.com/Faozil/Job-Radar)",
-    "Accept": "application/json",
-}
+USER_AGENT = "job-radar/0.1 (+https://github.com/Faozil/Job-Radar)"
 MAX_WAIT_SECONDS = 30
 
 
@@ -22,18 +19,21 @@ class FetchError(Exception):
     """The request failed, possibly after retries."""
 
 
-def get_json(
+def fetch(
     url: str,
     *,
+    headers: Mapping[str, str] | None = None,
     timeout: float = 20,
     retries: int = 2,
     backoff: float = 1.0,
     sleep: Callable[[float], None] = time.sleep,
-) -> Any:
-    """Fetch a URL and decode the JSON. Retries timeouts, 429 and 5xx with exponential backoff."""
+) -> bytes:
+    """GET an https URL. Retries timeouts, 429 and 5xx with exponential backoff."""
     if not url.startswith("https://"):
         raise ValueError("Only https:// URLs are allowed")
-    request = urllib.request.Request(url, headers=HEADERS)  # noqa: S310
+    request = urllib.request.Request(  # noqa: S310
+        url, headers={"User-Agent": USER_AGENT, "Accept": "*/*", **(headers or {})}
+    )
 
     error = FetchError(f"{url}: request failed")
     for attempt in range(retries + 1):
@@ -41,7 +41,7 @@ def get_json(
         try:
             # https only, checked above
             with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
-                return json.load(response)
+                return response.read()
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 raise NotFoundError(url) from None
@@ -49,13 +49,19 @@ def get_json(
                 raise FetchError(f"{url}: HTTP {exc.code} {_describe(exc)}".rstrip()) from None
             wait = _retry_after(exc, default=wait)
             error = FetchError(f"{url}: HTTP {exc.code}")
-        except json.JSONDecodeError:
-            raise FetchError(f"{url}: response was not JSON") from None
         except (urllib.error.URLError, TimeoutError) as exc:
             error = FetchError(f"{url}: {getattr(exc, 'reason', exc)}")
         if attempt < retries:
             sleep(min(wait, MAX_WAIT_SECONDS))
     raise error
+
+
+def get_json(url: str, *, headers: Mapping[str, str] | None = None, **kwargs: Any) -> Any:
+    body = fetch(url, headers={"Accept": "application/json", **(headers or {})}, **kwargs)
+    try:
+        return json.loads(body)
+    except ValueError:
+        raise FetchError(f"{url}: response was not JSON") from None
 
 
 def _describe(exc: urllib.error.HTTPError) -> str:

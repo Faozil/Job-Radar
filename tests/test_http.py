@@ -87,3 +87,13 @@ def test_non_json_response(monkeypatch):
     monkeypatch.setattr(http.urllib.request, "urlopen", fake_urlopen)
     with pytest.raises(http.FetchError, match="not JSON"):
         http.get_json("https://example.com")
+
+
+def test_fetch_returns_bytes_and_adds_headers(monkeypatch):
+    calls = install(monkeypatch, {"a": 1}, {"a": 1})
+    assert http.fetch("https://example.com/feed", headers={"X-API-Key": "public"}) == b'{"a": 1}'
+    assert calls[0].get_header("X-api-key") == "public"
+    assert calls[0].get_header("Accept") == "*/*"
+
+    http.get_json("https://example.com/jobs")
+    assert calls[1].get_header("Accept") == "application/json"

@@ -10,8 +10,12 @@ from jobradar.http import FetchError
 from jobradar.sources import (
     ArbeitnowFeed,
     AshbyBoard,
+    BundesagenturFeed,
     GreenhouseBoard,
+    JobicyFeed,
     LeverBoard,
+    SmartRecruitersBoard,
+    WeWorkRemotelyFeed,
     build_sources,
 )
 
@@ -20,10 +24,15 @@ class FakeGet:
     def __init__(self, *responses):
         self.responses = list(responses)
         self.urls: list[str] = []
+        self.headers: list[dict] = []
 
-    def __call__(self, url):
+    def __call__(self, url, headers=None):
         self.urls.append(url)
-        return self.responses.pop(0)
+        self.headers.append(headers or {})
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def test_greenhouse_parses_locations_offices_metadata_and_content():
@@ -177,9 +186,170 @@ def test_build_sources_from_config():
             Board("greenhouse", "a", "A"),
             Board("lever", "b", "B", "eu"),
             Board("ashby", "c", "C"),
+            Board("smartrecruiters", "D", "D"),
         ),
         filters=FilterConfig.from_lists(title_include=["devops"]),
-        arbeitnow_enabled=True,
+        feeds={
+            "arbeitnow": {"pages": 2},
+            "bundesagentur": {"days": 7},
+            "jobicy": {},
+            "weworkremotely": {},
+        },
     )
     labels = [source.label for source in build_sources(config)]
-    assert labels == ["greenhouse/a", "lever/b", "ashby/c", "arbeitnow/feed"]
+    assert labels == [
+        "greenhouse/a",
+        "lever/b",
+        "ashby/c",
+        "smartrecruiters/D",
+        "arbeitnow/feed",
+        "bundesagentur/de",
+        "jobicy/remote",
+        "weworkremotely/devops",
+    ]
+
+
+BA_LISTING = {
+    "stellenangebotsTitel": "DevOps Engineer (m/w/d)",
+    "firma": "Acme GmbH",
+    "referenznummer": "10001-1003833222-S",
+    "datumErsteVeroeffentlichung": "2026-10-09",
+    "stellenlokationen": [
+        {"adresse": {"ort": "Berlin", "region": "BERLIN", "land": "DEUTSCHLAND"}},
+        {"adresse": {"ort": "Hamburg", "region": "HAMBURG", "land": "DEUTSCHLAND"}},
+    ],
+}
+
+
+def test_bundesagentur_searches_with_the_client_id_and_skips_agencies():
+    get = FakeGet({"ergebnisliste": [BA_LISTING]})
+    [job] = BundesagenturFeed(searches=["DevOps"], days=1, get=get).fetch()
+
+    assert get.headers == [{"X-API-Key": "jobboerse-jobsuche"}]
+    for part in (
+        "/pc/v6/jobs?",
+        "was=DevOps",
+        "veroeffentlichtseit=1",
+        "pav=false",
+        "zeitarbeit=false",
+    ):
+        assert part in get.urls[0]
+    assert (job.title, job.company) == ("DevOps Engineer (m/w/d)", "Acme GmbH")
+    assert job.locations == ["Berlin", "Hamburg", "Deutschland"]
+    assert job.url == "https://www.arbeitsagentur.de/jobsuche/jobdetail/10001-1003833222-S"
+    assert job.published_at == datetime(2026, 10, 9, tzinfo=UTC)
+    assert job.key == "bundesagentur:de:10001-1003833222-s"
+
+
+def test_bundesagentur_pages_and_drops_duplicates_across_searches():
+    full_page = {"ergebnisliste": [{**BA_LISTING, "referenznummer": str(n)} for n in range(100)]}
+    get = FakeGet(full_page, {"ergebnisliste": [BA_LISTING]}, {"ergebnisliste": [BA_LISTING]})
+    jobs = BundesagenturFeed(searches=["DevOps", "Kubernetes"], get=get).fetch()
+    assert len(jobs) == 101
+    assert ["page=2" in url for url in get.urls] == [False, True, False]
+
+
+def test_bundesagentur_only_accepts_periods_the_api_supports():
+    with pytest.raises(ValueError, match="0, 1, 7, 14, 28"):
+        BundesagenturFeed(days=2)
+
+
+def test_bundesagentur_reads_the_ad_and_skips_jobs_it_cannot_read():
+    details = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobdetails/"
+    answers = {
+        details + "MTAwMDEtMTAwMzgzMzIyMi1T": {"stellenangebotsBeschreibung": "We sponsor visas."},
+        details + "Mg==": FetchError("down"),
+    }
+    calls = []
+
+    def get(url, headers=None):
+        calls.append((url, headers))
+        answer = answers[url]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    jobs = BundesagenturFeed(get=FakeGet()).parse(
+        [BA_LISTING, {**BA_LISTING, "referenznummer": "2"}]
+    )
+    [described] = BundesagenturFeed(get=get).describe(jobs)
+    assert described.description == "We sponsor visas."
+    assert {headers["X-API-Key"] for _, headers in calls} == {"jobboerse-jobsuche"}
+
+
+def test_smartrecruiters_searches_pages_and_reads_the_ad():
+    listing = {
+        "id": "744000153731048",
+        "name": "DevOps Engineer",
+        "releasedDate": "2026-10-06T11:11:19.649Z",
+        "location": {"fullLocation": "Cluj-Napoca, CJ, Romania", "remote": False},
+    }
+    detail = {
+        "postingUrl": "https://jobs.smartrecruiters.com/Endava/744000153731048-devops-engineer",
+        "jobAd": {
+            "sections": {
+                "jobDescription": {"text": "<p>Run our Kubernetes platform.</p>"},
+                "additionalInformation": {"text": "<p>Relocation support available.</p>"},
+            }
+        },
+    }
+    get = FakeGet({"content": [listing]}, {"content": []}, {"content": [listing]}, detail)
+    board = SmartRecruitersBoard("Endava", "Endava", get=get)
+    [job] = board.fetch()
+    assert [url.split("?")[1].split("&")[0] for url in get.urls] == [
+        "q=devops",
+        "q=kubernetes",
+        "q=terraform",
+    ]
+    assert job.locations == ["Cluj-Napoca, CJ, Romania"]
+
+    [job] = board.describe([job])
+    assert (
+        get.urls[-1]
+        == "https://api.smartrecruiters.com/v1/companies/Endava/postings/744000153731048"
+    )
+    assert job.description == "Run our Kubernetes platform.\nRelocation support available."
+    assert job.url.endswith("744000153731048-devops-engineer")
+
+
+def test_jobicy_merges_tags_and_splits_regions():
+    item = {
+        "id": 101,
+        "jobTitle": "Senior DevOps &amp; SRE",
+        "companyName": "Acme",
+        "url": "https://jobicy.com/jobs/101-senior-devops",
+        "jobGeo": "EMEA,  Ireland",
+        "jobDescription": "<p>Fully remote.</p>",
+        "pubDate": "2026-10-08 12:30:00",
+    }
+    get = FakeGet({"jobs": [item]}, {"jobs": [item, {"id": None, "jobTitle": "x"}]})
+    [job] = JobicyFeed(tags=["devops", "sre"], get=get).fetch()
+    assert job.title == "Senior DevOps & SRE"
+    assert job.locations == ["EMEA", "Ireland"]
+    assert job.remote is True
+    assert job.published_at == datetime(2026, 10, 8, 12, 30, tzinfo=UTC)
+
+
+WWR_FEED = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+  <item>
+    <title>Acme: DevOps Engineer</title>
+    <region>Anywhere in the World</region>
+    <description>&lt;p&gt;We sponsor visas.&lt;/p&gt;</description>
+    <pubDate>Tue, 06 Oct 2026 10:00:00 +0000</pubDate>
+    <link>https://weworkremotely.com/remote-jobs/acme-devops-engineer</link>
+  </item>
+  <item><title>No link here</title></item>
+</channel></rss>"""
+
+
+def test_we_work_remotely_reads_the_rss_feed():
+    urls = []
+    feed = WeWorkRemotelyFeed(fetch=lambda url: urls.append(url) or WWR_FEED)
+    [job] = feed.fetch()
+    assert urls == ["https://weworkremotely.com/categories/remote-devops-sysadmin-jobs.rss"]
+    assert (job.company, job.title) == ("Acme", "DevOps Engineer")
+    assert job.locations == ["Anywhere in the World"]
+    assert job.description == "We sponsor visas."
+    assert job.published_at == datetime(2026, 10, 6, 10, tzinfo=UTC)
+    assert job.key == "weworkremotely:devops:acme-devops-engineer"

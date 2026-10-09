@@ -35,13 +35,13 @@ variable "log_retention_days" {
 }
 
 variable "lambda_memory_mb" {
-  description = "Lambda memory in MB. 256 MB is plenty for a few thousand job ads."
+  description = "Lambda memory in MB. A run with ~10,000 job ads peaks near 200 MB; CPU scales with memory."
   type        = number
-  default     = 256
+  default     = 512
 }
 
 variable "lambda_timeout_seconds" {
-  description = "Lambda timeout in seconds. Runs take seconds; this covers several slow boards."
+  description = "Lambda timeout in seconds. A run takes about a minute; this leaves room for slow boards."
   type        = number
   default     = 300
 }

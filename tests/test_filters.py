@@ -11,6 +11,7 @@ from jobradar.filters import (
     classify_sponsorship,
     language_flags,
     location_ok,
+    prefilter,
     title_ok,
 )
 from jobradar.models import (
@@ -40,6 +41,17 @@ from jobradar.models import (
         "Software Engineer, Infrastructure",
         "Systemadministrator Linux (m/w/d)",
         "Linux-Administrator (m/w/d)",
+        "Junior DevOps Engineer",
+        "Graduate Cloud Engineer",
+        "MLOps Engineer",
+        "Cloud Architect",
+        "Azure Engineer",
+        "Sysadmin",
+        "HPC Systems Administrator",
+        "Senior Systems Engineer Linux (m/w/d)",
+        "System Engineer | Web Hosting | Based in Lithuania",
+        "Junior System Engineer | Network team",
+        "IT Systems Engineer",
     ],
 )
 def test_titles_that_match(app_config, title):
@@ -59,6 +71,15 @@ def test_titles_that_match(app_config, title):
         "Director, Product Management - Cloud Security and Shared Capabilities",
         "Working Student DevOps",
         "Associate Director, Maintenance and Reliability Engineering",
+        "Flight Control Systems Engineer",
+        "Avionics Systems Engineer",
+        "Lead Systems Engineer (d/f/m) Ground Support Systems",
+        "Software System Engineer MRI (f/m/d)",
+        "Senior Financial Systems Engineer (m/f/d)",
+        "Presales Systems Engineer - Southern Germany",
+        "Senior DevOps Engineer - Repository Migration (Freelance)",
+        "Solutions Engineer, Cloud Infrastructure",
+        "Senior Mobile Engineer - React Native, Platform/Infrastructure (all genders)",
     ],
 )
 def test_titles_that_do_not_match(app_config, title):
@@ -78,6 +99,12 @@ def test_titles_that_do_not_match(app_config, title):
         (["EMEA"], True, "SRE"),
         (["Germany (Remote)"], None, "SRE"),
         ([], None, "Senior SRE | Ireland | Remote"),
+        (["Karlsruhe"], None, "DevOps Engineer"),
+        (["London, England"], None, "DevOps Engineer"),
+        (["Edinburgh, Scotland, United Kingdom"], None, "DevOps Engineer"),
+        (["Cardiff"], None, "DevOps Engineer"),
+        (["Belfast"], None, "DevOps Engineer"),
+        (["Remote, UK"], None, "SRE"),
     ],
 )
 def test_locations_that_match(app_config, locations, remote, title):
@@ -90,8 +117,10 @@ def test_locations_that_match(app_config, locations, remote, title):
     [
         ["Remote, United States"],
         ["Barcelona"],
-        ["London, England"],
         ["Remote, Europe"],
+        ["Cambridge, MA"],
+        ["New York, NY"],
+        ["Sydney, New South Wales, Australia"],
         ["Hybrid"],
         ["EMEA"],  # on-site in an unnamed EMEA office is not enough
         [],
@@ -137,6 +166,21 @@ def test_empty_location_rules_accept_everything():
             "We offer relocation support. You must be authorised to work in the EU.",
             SPONSORSHIP_UNCLEAR,
         ),
+        ("This position is not eligible for visa sponsorship.", SPONSORSHIP_EXCLUDED),
+        (
+            "You must be work authorized in the United States without the need for new visa "
+            "sponsorship.",
+            SPONSORSHIP_EXCLUDED,
+        ),
+        ("You'll need to have the independent right to work in the UK.", SPONSORSHIP_EXCLUDED),
+        ("We are not a licensed visa sponsor.", SPONSORSHIP_EXCLUDED),
+        ("Tier 2 sponsorship is available for this role.", SPONSORSHIP_OFFERED),
+        ("We hold a Skilled Worker sponsor licence.", SPONSORSHIP_OFFERED),
+        (
+            "Candidates must be eligible to access this technology under U.S. export laws "
+            "without sponsorship for an export license.",
+            SPONSORSHIP_UNKNOWN,
+        ),
         ("Join our friendly team in Berlin.", SPONSORSHIP_UNKNOWN),
         ("", SPONSORSHIP_UNKNOWN),
     ],
@@ -169,7 +213,7 @@ def test_apply_filters_end_to_end(app_config):
         make_job(job_id="2", description="We cannot offer visa sponsorship."),
         make_job(job_id="3", title="Account Executive"),
         make_job(job_id="4", locations=["Paris"]),
-        make_job(job_id="5", published_at=NOW - timedelta(days=90)),
+        make_job(job_id="5", source="arbeitnow", published_at=NOW - timedelta(days=90)),
         make_job(job_id="6", published_at=None),
     ]
     matched = apply_filters(jobs, app_config.filters, now=NOW)
@@ -186,3 +230,42 @@ def test_excluded_jobs_can_be_kept():
 def test_invalid_pattern_is_reported():
     with pytest.raises(ValueError, match="Invalid title pattern"):
         FilterConfig.from_lists(title_include=["(unclosed"])
+
+
+GERMAN_TEXT = (
+    "Wir suchen für unser Team eine Person, die mit uns die Plattform weiterentwickelt. "
+    "Du arbeitest mit Kubernetes und Terraform und bist für die Automatisierung der "
+    "Infrastruktur zuständig. Wir bieten dir ein Umfeld, in dem du mit uns wächst und "
+    "die Zukunft der Firma mitgestaltest. Das ist nicht nur ein Job, sondern eine Chance "
+    "für dich und für uns. Bei uns bekommst du eine faire Bezahlung und ein tolles Team."
+)
+
+
+def test_german_ads_are_skipped_only_when_asked():
+    keep = FilterConfig.from_lists(title_include=["devops"])
+    skip = FilterConfig.from_lists(title_include=["devops"], skip_german_ads=True)
+    jobs = [
+        make_job(job_id="1", description=GERMAN_TEXT),
+        make_job(job_id="2", description="We speak English."),
+    ]
+    assert [job.job_id for job in apply_filters(jobs, keep, now=NOW)] == ["1", "2"]
+    assert [job.job_id for job in apply_filters(jobs, skip, now=NOW)] == ["2"]
+
+
+def test_prefilter_works_without_the_ad_text():
+    filters = FilterConfig.from_lists(title_include=["devops"], locations=["berlin"])
+    jobs = [
+        make_job(job_id="1", description=""),
+        make_job(job_id="2", title="Chef"),
+        make_job(job_id="3", locations=["Paris"]),
+        make_job(job_id="4", source="arbeitnow", published_at=NOW - timedelta(days=90)),
+    ]
+    assert [job.job_id for job in prefilter(jobs, filters, now=NOW)] == ["1"]
+
+
+def test_the_age_limit_only_applies_to_feeds(app_config):
+    years_ago = NOW - timedelta(days=900)
+    board_job = make_job(job_id="1", published_at=years_ago)
+    feed_job = make_job(job_id="2", source="arbeitnow", board="feed", published_at=years_ago)
+    matched = prefilter([board_job, feed_job], app_config.filters, now=NOW)
+    assert [job.job_id for job in matched] == ["1"]

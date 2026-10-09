@@ -2,15 +2,22 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .filters import FilterConfig
 
 CONFIG_ENV = "JOB_RADAR_CONFIG"
-SOURCES = frozenset({"greenhouse", "lever", "ashby"})
+SOURCES = frozenset({"greenhouse", "lever", "ashby", "smartrecruiters"})
 LEVER_REGIONS = frozenset({"global", "eu"})
+# What each feed accepts besides `enabled`.
+FEED_SETTINGS: dict[str, dict[str, type]] = {
+    "arbeitnow": {"pages": int},
+    "bundesagentur": {"searches": list, "days": int},
+    "jobicy": {"tags": list},
+    "weworkremotely": {},
+}
 
 
 @dataclass(frozen=True)
@@ -25,8 +32,7 @@ class Board:
 class AppConfig:
     boards: tuple[Board, ...]
     filters: FilterConfig
-    arbeitnow_enabled: bool = True
-    arbeitnow_pages: int = 3
+    feeds: dict[str, dict[str, Any]] = field(default_factory=dict)
     max_per_run: int = 30
 
 
@@ -59,19 +65,18 @@ def parse_config(raw: dict[str, Any]) -> AppConfig:
         flag_languages=rules.get("flag_languages") or [],
         max_age_days=rules.get("max_age_days", 45),
         drop_if_sponsorship_excluded=rules.get("drop_if_sponsorship_excluded", True),
+        skip_german_ads=rules.get("skip_german_ads", False),
     )
     if not filters.title_include:
         raise ValueError("filters.title_include needs at least one pattern")
 
-    feed = raw.get("arbeitnow") or {}
     max_per_run = int(raw.get("max_per_run", 30))
     if max_per_run < 1:
         raise ValueError("max_per_run must be at least 1")
     return AppConfig(
         boards=_boards(raw.get("boards") or []),
         filters=filters,
-        arbeitnow_enabled=bool(feed.get("enabled", True)),
-        arbeitnow_pages=int(feed.get("pages", 3)),
+        feeds=_feeds(raw.get("feeds") or {}),
         max_per_run=max_per_run,
     )
 
@@ -94,3 +99,23 @@ def _boards(items: list[dict[str, Any]]) -> tuple[Board, ...]:
         seen.add((source, board_id.lower()))
         boards.append(Board(source, board_id, str(item.get("name") or board_id), region))
     return tuple(boards)
+
+
+def _feeds(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    feeds: dict[str, dict[str, Any]] = {}
+    for name, table in raw.items():
+        if name not in FEED_SETTINGS:
+            raise ValueError(f"feeds.{name}: unknown feed, use one of {sorted(FEED_SETTINGS)}")
+        if not isinstance(table, dict):
+            raise ValueError(f"feeds.{name} must be a table, like [feeds.{name}]")
+        settings = dict(table)
+        if not settings.pop("enabled", True):
+            continue
+        for key, value in settings.items():
+            expected = FEED_SETTINGS[name].get(key)
+            if expected is None:
+                raise ValueError(f"feeds.{name}: unknown setting {key!r}")
+            if not isinstance(value, expected):
+                raise ValueError(f"feeds.{name}.{key} must be of type {expected.__name__}")
+        feeds[name] = settings
+    return feeds
