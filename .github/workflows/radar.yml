@@ -39,7 +39,7 @@ jobs:
 
       - name: Restore the list of jobs already sent
         if: env.DRY_RUN != 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .state
           key: seen-jobs-${{ github.run_id }}
@@ -54,7 +54,7 @@ jobs:
 
       - name: Save the list of jobs already sent
         if: env.DRY_RUN != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .state
           key: seen-jobs-${{ github.run_id }}
