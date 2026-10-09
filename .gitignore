@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Local run state
+.state/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+infra/main/.build/
+*.auto.tfvars
+terraform.tfvars
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store

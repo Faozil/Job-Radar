@@ -1,0 +1,60 @@
+name: Radar on GitHub Actions
+
+# Run it by hand for a dry run, or uncomment the schedule to use it instead of AWS (turn the AWS
+# schedule off first). GitHub pauses scheduled workflows after 60 days without commits.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only print the matches (no Telegram, nothing saved)"
+        type: boolean
+        default: true
+  # schedule:
+  #   - cron: "0 7,17 * * *"  # 08:00 and 18:00 in Lagos (UTC+1)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: radar
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Dry run
+        if: env.DRY_RUN == 'true'
+        run: python -m jobradar run --dry-run --all
+
+      - name: Restore the list of jobs already sent
+        if: env.DRY_RUN != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .state
+          key: seen-jobs-${{ github.run_id }}
+          restore-keys: seen-jobs-
+
+      - name: Send new jobs to Telegram
+        if: env.DRY_RUN != 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m jobradar run --state .state/seen.json
+
+      - name: Save the list of jobs already sent
+        if: env.DRY_RUN != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .state
+          key: seen-jobs-${{ github.run_id }}

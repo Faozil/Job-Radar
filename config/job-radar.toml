@@ -1,0 +1,146 @@
+# Try changes with `make dry-run` (sends nothing) and `make check-boards`.
+
+max_per_run = 30  # the rest wait for the next run
+
+[filters]
+max_age_days = 45
+drop_if_sponsorship_excluded = true
+
+# Python regexes, case-insensitive. A title needs one include match and no exclude match.
+title_include = [
+  '\bdev\s?-?(sec)?ops\b',
+  '\bsite[\s-]reliability\b',
+  '\bsre\b',
+  '\bplatform\s+(engineer|engineering|reliability|infrastructure)',
+  '\binfrastructure\s+(engineer|developer|platform|operations|automation)',
+  '\bcloud\s+(security\s+)?(engineer|infrastructure|platform|operations|support\s+engineer|field\s+engineer|developer)',
+  '\bengineer\b[^|]*\binfrastructure\b',
+  '\b(linux|systems?)[\s-]?(engineer|administrator)\b',
+  '\b(kubernetes|k8s)\b',
+  '\b(release|build|ci/?cd)\s+engineer',
+  '\b(production|observability|reliability)\s+engineer\b',
+]
+
+title_exclude = [
+  '\b(staff|principal|distinguished)\b',
+  '\b(head|director|vp|vice\s+president|chief)\b',
+  '\bmanager\b',
+  '\b(intern|internship|working\s+student|werkstudent|praktik\w*|apprentice\w*)\b',
+  '\b(sales|account\s+executive|business\s+development|alliances?|marketing|recruit\w*)\b',
+  '\b(embedded|firmware|hardware|electrical|mechanical)\b',
+]
+
+# On-site, hybrid and country-limited remote roles must mention one of these.
+locations = [
+  "germany", "deutschland", "berlin", "munich", "münchen", "hamburg", "frankfurt", "cologne",
+  "köln", "düsseldorf", "stuttgart", "leipzig",
+  "netherlands", "amsterdam", "rotterdam", "utrecht", "eindhoven", "the hague",
+  "ireland", "dublin", "cork",
+  "lithuania", "vilnius", "kaunas",
+  "romania", "bucharest", "bucurești", "cluj", "iasi", "iași", "timisoara", "timișoara",
+  "poland", "warsaw", "warszawa", "krakow", "kraków", "wroclaw", "wrocław", "gdansk", "gdańsk",
+]
+
+# Fully remote roles must mention one of these. Not "europe": those usually need EU residence.
+remote_regions = ["worldwide", "anywhere", "global", "emea", "africa", "nigeria", "lagos"]
+
+# Flagged in the digest, not dropped.
+flag_languages = ["german", "dutch", "lithuanian", "romanian", "polish"]
+
+[arbeitnow]
+enabled = true
+pages = 3
+
+# Company boards. Take the id from the job links on the careers page:
+#   job-boards.greenhouse.io/<id>  ->  source = "greenhouse"
+#   jobs.lever.co/<id>             ->  source = "lever" (jobs.eu.lever.co: add region = "eu")
+#   jobs.ashbyhq.com/<id>          ->  source = "ashby"
+
+# Germany
+[[boards]]
+source = "greenhouse"
+id = "n26"
+name = "N26"
+
+[[boards]]
+source = "greenhouse"
+id = "getyourguide"
+name = "GetYourGuide"
+
+[[boards]]
+source = "greenhouse"
+id = "celonis"
+name = "Celonis"
+
+[[boards]]
+source = "greenhouse"
+id = "sumup"
+name = "SumUp"
+
+[[boards]]
+source = "greenhouse"
+id = "hellofresh"
+name = "HelloFresh"
+
+[[boards]]
+source = "greenhouse"
+id = "wolt"
+name = "Wolt"
+
+[[boards]]
+source = "greenhouse"
+id = "contentful"
+name = "Contentful"
+
+# Netherlands and Ireland
+[[boards]]
+source = "greenhouse"
+id = "adyen"
+name = "Adyen"
+
+[[boards]]
+source = "greenhouse"
+id = "stripe"
+name = "Stripe"
+
+[[boards]]
+source = "greenhouse"
+id = "intercom"
+name = "Intercom"
+
+[[boards]]
+source = "greenhouse"
+id = "datadog"
+name = "Datadog"
+
+[[boards]]
+source = "greenhouse"
+id = "cloudflare"
+name = "Cloudflare"
+
+# Lithuania (Vilnius office)
+[[boards]]
+source = "greenhouse"
+id = "robinhood"
+name = "Robinhood"
+
+# Remote-first, hiring across EMEA or worldwide
+[[boards]]
+source = "greenhouse"
+id = "canonical"
+name = "Canonical"
+
+[[boards]]
+source = "greenhouse"
+id = "gitlab"
+name = "GitLab"
+
+[[boards]]
+source = "greenhouse"
+id = "grafanalabs"
+name = "Grafana Labs"
+
+[[boards]]
+source = "greenhouse"
+id = "elastic"
+name = "Elastic"

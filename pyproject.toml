@@ -1,0 +1,25 @@
+[project]
+name = "job-radar"
+version = "0.1.0"
+description = "Twice-daily Telegram alerts for DevOps roles in visa-friendly countries, from public job boards."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Abdul-Faozil Majekodunmi" }]
+dependencies = []  # standard library only; boto3 comes with the Lambda runtime
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
