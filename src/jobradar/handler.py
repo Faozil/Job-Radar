@@ -15,14 +15,8 @@ from .store import DynamoStore
 logger = logging.getLogger()
 logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
-PLACEHOLDER_PREFIX = "set-me"  # what Terraform writes into the SSM parameters
-
 # Kept between warm invocations, so config and secrets are read once per container.
 _cache: dict[str, Any] = {}
-
-
-class SetupError(RuntimeError):
-    """Configuration is incomplete, e.g. the email settings were never set."""
 
 
 def _ssm_value(name: str) -> str:
@@ -31,10 +25,7 @@ def _ssm_value(name: str) -> str:
 
         _cache["ssm"] = boto3.client("ssm")
     response = _cache["ssm"].get_parameter(Name=name, WithDecryption=True)
-    value = str(response["Parameter"]["Value"]).strip()
-    if not value or value.startswith(PLACEHOLDER_PREFIX):
-        raise SetupError(f"SSM parameter {name} still holds the placeholder; set the real value")
-    return value
+    return str(response["Parameter"]["Value"]).strip()
 
 
 def _config() -> AppConfig:

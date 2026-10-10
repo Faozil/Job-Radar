@@ -20,5 +20,5 @@ output "email_password_parameter" {
 
 output "test_command" {
   description = "Run the radar once, right now."
-  value       = "aws lambda invoke --region ${var.region} --function-name ${aws_lambda_function.radar.function_name} --cli-binary-format raw-in-base64-out --payload '{}' /dev/stdout"
+  value       = "aws lambda invoke --region ${var.region} --function-name ${aws_lambda_function.radar.function_name} --cli-binary-format raw-in-base64-out --payload '{}' response.json"
 }

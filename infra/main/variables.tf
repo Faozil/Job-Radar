@@ -22,8 +22,38 @@ variable "schedule_timezone" {
   default     = "Africa/Lagos"
 }
 
+variable "email_address" {
+  description = "Gmail address that sends and receives the digest (GitHub secret EMAIL_ADDRESS)."
+  type        = string
+  ephemeral   = true
+  sensitive   = true
+
+  validation {
+    condition     = can(regex("^[^@\\s]+@[^@\\s]+$", var.email_address))
+    error_message = "Add the EMAIL_ADDRESS secret (your Gmail address) to the production environment."
+  }
+}
+
+variable "email_app_password" {
+  description = "Gmail app password (GitHub secret EMAIL_APP_PASSWORD)."
+  type        = string
+  ephemeral   = true
+  sensitive   = true
+
+  validation {
+    condition     = length(trimspace(var.email_app_password)) > 0
+    error_message = "Add the EMAIL_APP_PASSWORD secret to the production environment."
+  }
+}
+
+variable "email_settings_version" {
+  description = "Increase by one after changing the email secrets, so the next deploy writes them to SSM."
+  type        = number
+  default     = 1
+}
+
 variable "alert_email" {
-  description = "Email that gets an alert if a run fails. Leave empty for no email."
+  description = "Email that gets an alert if a run fails (GitHub secret ALERT_EMAIL). Empty for none."
   type        = string
   default     = ""
 }

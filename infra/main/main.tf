@@ -12,17 +12,17 @@ locals {
   )
 }
 
-# Terraform only writes a placeholder. value_wo is write-only, so the real values, set later with
-# the AWS CLI, never end up in the state (a plain value is read back on every refresh).
-# Leave value_wo_version at 1: bumping it writes the placeholder over the real value.
+# The values come from GitHub secrets through ephemeral variables into write-only arguments, so
+# they never land in a plan file or the state. They are written when the parameter is created and
+# again only when email_settings_version changes.
 resource "aws_ssm_parameter" "email_address" {
   #checkov:skip=CKV_AWS_337:SecureString with the AWS managed key; a customer-managed key costs $1 a month
 
   name             = "/${var.name}/email/address"
   description      = "Gmail address that sends and receives the ${var.name} digest"
   type             = "SecureString"
-  value_wo         = "set-me-with-the-aws-cli"
-  value_wo_version = 1
+  value_wo         = var.email_address
+  value_wo_version = var.email_settings_version
 }
 
 resource "aws_ssm_parameter" "email_password" {
@@ -31,8 +31,8 @@ resource "aws_ssm_parameter" "email_password" {
   name             = "/${var.name}/email/app-password"
   description      = "Gmail app password for ${var.name}"
   type             = "SecureString"
-  value_wo         = "set-me-with-the-aws-cli"
-  value_wo_version = 1
+  value_wo         = var.email_app_password
+  value_wo_version = var.email_settings_version
 }
 
 # Jobs already sent. 5/5 capacity is inside the always-free 25/25; the TTL clears old items.

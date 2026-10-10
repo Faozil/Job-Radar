@@ -59,16 +59,6 @@ def test_lambda_handler_runs_the_pipeline_and_emits_metrics(monkeypatch, capsys,
     assert emf["_aws"]["CloudWatchMetrics"][0]["Namespace"] == "JobRadar"
 
 
-def test_placeholder_secret_gives_a_clear_error(monkeypatch, lambda_env):
-    class FakeSsm:
-        def get_parameter(self, Name, WithDecryption):
-            return {"Parameter": {"Value": "set-me-with-aws-cli"}}
-
-    handler._cache["ssm"] = FakeSsm()
-    with pytest.raises(handler.SetupError, match="placeholder"):
-        handler._ssm_value("/job-radar/email/app-password")
-
-
 def test_secrets_are_read_once_per_container(monkeypatch, lambda_env):
     calls = []
 

@@ -16,13 +16,17 @@ output "workload_boundary_arn" {
 output "next_steps" {
   description = "What to run next."
   value       = <<-EOT
-    1. Deploy the main stack from your laptop once:
-       terraform -chdir=infra/main init -backend-config="bucket=${aws_s3_bucket.state.bucket}" -backend-config="region=${var.region}"
-       terraform -chdir=infra/main apply
+    1. Back up this stack's state, under a path the deploy role cannot read:
+       aws s3 cp infra/bootstrap/terraform.tfstate s3://${aws_s3_bucket.state.bucket}/bootstrap/terraform.tfstate
 
-    2. Then add these GitHub repository variables (Settings > Secrets and variables > Actions > Variables):
+    2. In GitHub, add these repository variables (Settings > Secrets and variables > Actions > Variables):
        AWS_REGION          = ${var.region}
        AWS_DEPLOY_ROLE_ARN = ${aws_iam_role.github_deploy.arn}
        TF_STATE_BUCKET     = ${aws_s3_bucket.state.bucket}
+
+    3. Create the "${var.github_environment}" environment (Settings > Environments) with the secrets
+       EMAIL_ADDRESS, EMAIL_APP_PASSWORD and, optionally, ALERT_EMAIL.
+
+    4. Run the Deploy workflow from the Actions tab. It creates everything else.
   EOT
 }

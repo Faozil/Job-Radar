@@ -78,20 +78,25 @@ $32 a month), no customer-managed KMS keys ($1 a month each), no point-in-time r
   permissions boundary, and is explicitly denied any change to itself or to that boundary.
 - **Least-privilege runtime.** The Lambda can write its own logs, read and write one table, and
   read two parameters. Nothing else.
-- **Secrets never touch code, plans or state.** Terraform creates the SSM parameters with a
-  write-only placeholder (`value_wo`), so the real values, set once with the AWS CLI, are never
-  read back into state. Mail goes out over TLS with certificate checks, using a Gmail app password
-  that can be revoked on its own.
-- **Scanned on every push.** Checkov checks the Terraform (every skipped check has a written reason
-  next to the resource), and Trivy scans the repository for secrets and vulnerable dependencies.
+- **Secrets never touch code, plans or state.** The email settings are GitHub environment secrets.
+  The deploy passes them to Terraform as ephemeral variables, which feed write-only SSM arguments
+  (`value_wo`), so they never land in a plan file or the state. Mail goes out over TLS with
+  certificate checks, using a Gmail app password that can be revoked on its own.
+- **No long-lived keys for the one-time setup either.** The bootstrap signs in with `aws login`,
+  which gives the CLI short-lived credentials from your console session.
+- **Scanned on every change.** On every pull request and push to `main`, Checkov checks the
+  Terraform (every skipped check has a written reason next to the resource), and Trivy scans the
+  repository for secrets and vulnerable dependencies.
 
 ## Setup
 
-You need an AWS account, Terraform 1.11 or newer, Python 3.11 or newer, the AWS CLI and a Gmail
-account with 2-Step Verification. For the one-time setup, sign the CLI in as an IAM user with admin rights and MFA (never
-the root user). Once GitHub deploys work, you can delete that user's access keys.
+You need an AWS account, a Gmail account with 2-Step Verification, and on your laptop Terraform
+1.11 or newer, Python 3.11 or newer and AWS CLI 2.32 or newer. Every service used here is available
+on AWS's free account plan.
 
-Every service used here is available on AWS's free account plan.
+Only the one-time bootstrap runs on your laptop. It creates the role GitHub deploys with, so GitHub
+can't create it, and by design GitHub can't change it later either. Everything else is deployed by
+GitHub Actions.
 
 ### 1. Create a Gmail app password
 
@@ -118,64 +123,76 @@ make check-boards   # every board should answer OK
 make dry-run        # prints what would be sent right now
 ```
 
-### 3. Bootstrap AWS (once)
+### 3. Bootstrap AWS (once, from your laptop)
 
-Creates the Terraform state bucket, the GitHub OIDC provider, the deploy role and the permissions
-boundary. Use your own `owner/repo`, with the exact case GitHub shows: the deploy role's trust
-policy compares it case-sensitively.
+1. In the AWS console, create an IAM user with console access and MFA, and attach the
+   `AdministratorAccess` and `SignInLocalDevelopmentAccess` policies. Don't use the root user.
+2. Sign the CLI in through your browser. No access keys are created; the credentials last a few
+   hours at most. The second line hands them to Terraform (run it again if they expire):
 
-```bash
-cd infra/bootstrap
-terraform init
-terraform apply -var="github_repository=Faozil/Job-Radar"
-```
+   ```bash
+   aws login
+   eval "$(aws configure export-credentials --format env)"
+   ```
 
-Its output prints the next commands. Keep `infra/bootstrap/terraform.tfstate`; it is git-ignored.
+3. Create the Terraform state bucket, the GitHub OIDC provider, the deploy role and the
+   permissions boundary:
 
-### 4. Deploy the main stack (once from your laptop)
+   ```bash
+   terraform -chdir=infra/bootstrap init
+   terraform -chdir=infra/bootstrap apply
+   ```
 
-```bash
-terraform -chdir=infra/main init \
-  -backend-config="bucket=<state_bucket from the bootstrap output>" \
-  -backend-config="region=eu-west-1"
-terraform -chdir=infra/main apply -var="alert_email=you@example.com"
-```
+   For a repository other than `Faozil/Job-Radar`, add `-var="github_repository=owner/name"`,
+   with the exact case GitHub shows: the deploy role's trust policy compares it case-sensitively.
 
-AWS emails you a link to confirm the alert subscription. Commit the `.terraform.lock.hcl` files
-that `terraform init` created.
+4. Follow the steps the output prints. The first backs up this stack's state, which lives in
+   `infra/bootstrap/terraform.tfstate` (git-ignored) because this stack creates the bucket:
 
-### 5. Store the email settings
+   ```bash
+   aws s3 cp infra/bootstrap/terraform.tfstate s3://<state_bucket>/bootstrap/terraform.tfstate
+   ```
 
-```bash
-aws ssm put-parameter --region eu-west-1 --name /job-radar/email/address \
-  --type SecureString --overwrite --value "you@gmail.com"
-read -rs PASSWORD
-aws ssm put-parameter --region eu-west-1 --name /job-radar/email/app-password \
-  --type SecureString --overwrite --value "$PASSWORD"
-unset PASSWORD
-```
+### 4. Connect GitHub
 
-Run it once to check (the command is also in the Terraform output):
+1. **Settings > Environments > New environment**, named `production`: the deploy role only trusts
+   that name. Add yourself as a required reviewer if you want to approve each deploy.
+2. In that environment, add these secrets:
+
+   | Secret | Value |
+   |---|---|
+   | `EMAIL_ADDRESS` | the Gmail address that sends and receives the digest |
+   | `EMAIL_APP_PASSWORD` | the app password from step 1 |
+   | `ALERT_EMAIL` | optional: where AWS emails you if a run fails |
+
+3. **Settings > Secrets and variables > Actions > Variables**, add:
+
+   | Variable | Value |
+   |---|---|
+   | `AWS_REGION` | `eu-west-1` |
+   | `AWS_DEPLOY_ROLE_ARN` | `deploy_role_arn` from the bootstrap output |
+   | `TF_STATE_BUCKET` | `state_bucket` from the bootstrap output |
+
+Workflow logs are public on a public repository. GitHub masks secrets in them, so anything personal
+is a secret; the role ARN and bucket name are not secret.
+
+### 5. Deploy
+
+Open **Actions > Deploy > Run workflow**. It runs the tests, signs in to AWS with OIDC, plans and
+applies the main stack, and writes the email settings to SSM. If you set `ALERT_EMAIL`, AWS emails
+you a link to confirm the subscription.
+
+The radar then runs at 08:00 and 18:00 Lagos time. To try it straight away, signed in as in step 3:
 
 ```bash
 aws lambda invoke --region eu-west-1 --function-name job-radar \
-  --cli-binary-format raw-in-base64-out --payload '{}' /dev/stdout
+  --cli-binary-format raw-in-base64-out --payload '{}' response.json && cat response.json
 ```
 
-### 6. Let GitHub Actions deploy from now on
+From now on, every push to `main` that changes `src/`, `config/` or `infra/main/` deploys itself.
 
-In the repository, open **Settings > Secrets and variables > Actions > Variables** and add:
-
-| Variable | Value |
-|---|---|
-| `AWS_REGION` | `eu-west-1` |
-| `AWS_DEPLOY_ROLE_ARN` | `deploy_role_arn` from the bootstrap output |
-| `TF_STATE_BUCKET` | `state_bucket` from the bootstrap output |
-| `ALERT_EMAIL` | optional, your email for failure alerts |
-
-Every push to `main` that changes `src/`, `config/` or `infra/main/` now runs the tests and
-`terraform apply`. To require your approval first, add a required reviewer to the `production`
-environment under **Settings > Environments**.
+To change the Gmail address or app password later, update the secrets, increase
+`email_settings_version` in [`infra/main/variables.tf`](infra/main/variables.tf) by one, and push.
 
 ## Configuration
 
