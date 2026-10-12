@@ -17,6 +17,9 @@ from .models import (
 REMOTE_WORDS = ("remote", "home based", "home-based", "work from home", "anywhere", "distributed")
 GERMAN_AD = "Ad is in German"
 
+# Canada's employer-backed work permits.
+_CANADIAN_PERMIT = r"(?:lmias?|global\s+talent\s+stream)"
+
 # Sentences that rule sponsorship out.
 _NEGATIVE = re.compile(
     "|".join(
@@ -33,8 +36,10 @@ _NEGATIVE = re.compile(
             r"\b(?:not\s+eligible|ineligible)\s+for\s+(?:(?:visa|immigration|work\s+permit)\s+)?"
             r"sponsorship",
             r"\bnot\s+(?:a\s+)?(?:licen[cs]ed|registered)\s+(?:visa\s+)?sponsor",
-            r"\bsponsorship\s+(?:is\s+)?(?:not|unavailable)\b",
+            r"\b(?:sponsorship|lmias?)(?:\s+\w+)?\s+(?:is\s+|are\s+)?(?:not|unavailable)\b",
+            r"\b(?:no|not|unable|cannot|can't|won't)\s+(?:\w+\s+){0,3}?" + _CANADIAN_PERMIT + r"\b",
             r"\b(?:eu|eea|uk|us)\s+(?:citizens?|nationals?|residents?)\s+only",
+            r"\bcitizens?(?:\s+(?:or|and)\s+|\s*/\s*)permanent\s+residents?\b",
             r"\bmust\s+(?:already\s+)?(?:have|hold|possess)\s+(?:a\s+|an\s+|the\s+)?"
             r"(?:valid\s+|existing\s+|current\s+)?(?:legal\s+)?(?:right|authori[sz]ation|permission)"
             r"\s+to\s+work",
@@ -65,6 +70,11 @@ _POSITIVE = re.compile(
             r"\b(?:help|support|assist)\s+(?:you\s+)?(?:with\s+)?(?:your\s+)?relocat",
             r"\bblue\s+card\b",
             r"\b(?:tier\s*2|skilled\s+worker)\s+(?:visa\s+)?sponsor",  # UK work visas
+            r"\b"
+            + _CANADIAN_PERMIT
+            + r"[\s-]+(?:support|assistance|sponsorship|application|approved)",
+            r"\b(?:support|sponsor|provid|obtain|offer|apply\s+for|eligible\s+for|through|via)\w*\s+"
+            r"(?:(?:an|a|the|your)\s+)?" + _CANADIAN_PERMIT + r"\b",
             r"\bimmigration\s+(?:support|assistance|lawyer|partner|advice)",
             r"\bwe\s+(?:can\s+|will\s+|do\s+)?(?:also\s+)?sponsor\b",
         ]
@@ -84,7 +94,7 @@ LANGUAGE_NAMES = {
 }
 _LEVEL_BEFORE = (
     r"(?:fluent|fluency|native|proficien\w*|business[\s-]?level|excellent|very\s+good|"
-    r"strong|working\s+knowledge|c1|c2|b2)"
+    r"strong|working\s+knowledge|bilingual|c1|c2|b2)"
 )
 _LEVEL_AFTER = (
     r"(?:fluent|fluency|native|required|mandatory|essential|a\s+must|must|c1|c2|b2|"

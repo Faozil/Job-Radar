@@ -48,6 +48,12 @@ boards = [
   # Poland
   { source = "lever", id = "palantir", name = "Palantir" },
 
+  # Canada
+  { source = "ashby", id = "cohere", name = "Cohere" },
+  { source = "ashby", id = "wealthsimple", name = "Wealthsimple" },
+  { source = "ashby", id = "klue", name = "Klue" },
+  { source = "lever", id = "pointclickcare", name = "PointClickCare" },
+
   # Remote-first, hiring across EMEA or worldwide
   { source = "greenhouse", id = "canonical", name = "Canonical" },
   { source = "greenhouse", id = "gitlab", name = "GitLab" },
@@ -98,7 +104,8 @@ title_exclude = [
 
 # On-site, hybrid and country-limited remote roles must mention one of these. Some place names
 # are left out because they also exist elsewhere: Cambridge (MA), York (New York), Wales (New
-# South Wales). Jobs there still match through "uk" or "united kingdom".
+# South Wales), Victoria (Australia), Hamilton (New Zealand), Ontario (California). Jobs there
+# still match through the country name.
 locations = [
   # Germany
   "germany", "deutschland", "berlin", "munich", "münchen", "hamburg", "frankfurt", "cologne",
@@ -124,13 +131,17 @@ locations = [
   "edinburgh", "glasgow", "cardiff", "swansea", "belfast", "leeds", "bristol", "birmingham",
   "sheffield", "nottingham", "liverpool", "newcastle upon tyne", "aberdeen", "dundee",
   "milton keynes", "southampton",
+  # Canada
+  "canada", "toronto", "mississauga", "waterloo", "kitchener", "ottawa", "montreal", "montréal",
+  "quebec", "québec", "vancouver", "burnaby", "british columbia", "calgary", "edmonton",
+  "alberta", "winnipeg", "halifax",
 ]
 
 # Fully remote roles must mention one of these. Not "europe": those usually need EU residence.
 remote_regions = ["worldwide", "anywhere", "global", "emea", "africa", "nigeria", "lagos"]
 
 # Flagged in the digest, not dropped.
-flag_languages = ["german", "dutch", "lithuanian", "romanian", "polish"]
+flag_languages = ["german", "dutch", "lithuanian", "romanian", "polish", "french"]
 
 # Job feeds that list many employers. Set enabled = false to turn one off.
 [feeds.arbeitnow]

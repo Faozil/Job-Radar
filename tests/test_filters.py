@@ -105,6 +105,11 @@ def test_titles_that_do_not_match(app_config, title):
         (["Cardiff"], None, "DevOps Engineer"),
         (["Belfast"], None, "DevOps Engineer"),
         (["Remote, UK"], None, "SRE"),
+        (["Toronto, Ontario, Canada"], None, "DevOps Engineer"),
+        (["Remote (Canada)"], None, "SRE"),
+        (["Montréal, QC"], None, "SRE"),
+        (["Vancouver, BC"], None, "Platform Engineer"),
+        (["Remote or Mississauga"], None, "Jr Software Engineer (SRE)"),
     ],
 )
 def test_locations_that_match(app_config, locations, remote, title):
@@ -121,6 +126,9 @@ def test_locations_that_match(app_config, locations, remote, title):
         ["Cambridge, MA"],
         ["New York, NY"],
         ["Sydney, New South Wales, Australia"],
+        ["Melbourne, Victoria, Australia"],
+        ["Hamilton, New Zealand"],
+        ["Ontario, California"],
         ["Hybrid"],
         ["EMEA"],  # on-site in an unnamed EMEA office is not enough
         [],
@@ -176,6 +184,15 @@ def test_empty_location_rules_accept_everything():
         ("We are not a licensed visa sponsor.", SPONSORSHIP_EXCLUDED),
         ("Tier 2 sponsorship is available for this role.", SPONSORSHIP_OFFERED),
         ("We hold a Skilled Worker sponsor licence.", SPONSORSHIP_OFFERED),
+        ("We support LMIA applications for this role.", SPONSORSHIP_OFFERED),
+        ("This position is LMIA-approved.", SPONSORSHIP_OFFERED),
+        ("LMIA sponsorship is available.", SPONSORSHIP_OFFERED),
+        ("We hire internationally through the Global Talent Stream.", SPONSORSHIP_OFFERED),
+        ("We are unable to support an LMIA for this position.", SPONSORSHIP_EXCLUDED),
+        ("This role is not eligible for LMIA.", SPONSORSHIP_EXCLUDED),
+        ("LMIA support is not available.", SPONSORSHIP_EXCLUDED),
+        ("Applicants must be Canadian citizens or permanent residents.", SPONSORSHIP_EXCLUDED),
+        ("You must be legally eligible to work in Canada.", SPONSORSHIP_EXCLUDED),
         (
             "Candidates must be eligible to access this technology under U.S. export laws "
             "without sponsorship for an export license.",
@@ -192,6 +209,9 @@ def test_sponsorship_classification(text, expected):
 def test_language_flags(app_config):
     assert language_flags("Fluent German is a must.", app_config.filters) == ["Asks for German"]
     assert language_flags("Dutch: C1 level required.", app_config.filters) == ["Asks for Dutch"]
+    assert language_flags("Bilingual (French and English).", app_config.filters) == [
+        "Asks for French"
+    ]
     assert language_flags("Gute Deutschkenntnisse are nice.", app_config.filters) == []
     assert language_flags("We speak English.", app_config.filters) == []
 

@@ -1,9 +1,9 @@
 # Job Radar
 
 Twice a day, Job Radar reads the public job boards of companies that hire in visa-friendly European
-countries, Germany's federal job board and a few remote-job feeds. It keeps the DevOps, SRE,
-platform and cloud roles, reads each ad for visa and relocation signals, and emails you only the
-**new** matches.
+countries and Canada, Germany's federal job board and a few remote-job feeds. It keeps the DevOps,
+SRE, platform and cloud roles, reads each ad for visa and relocation signals, and emails you only
+the **new** matches.
 
 It runs on AWS Lambda, is deployed with Terraform through GitHub Actions (OIDC, no stored keys), and
 stays inside AWS's always-free limits.
@@ -50,7 +50,7 @@ Each run:
    support*, *unclear*, *not mentioned* or *excludes sponsorship*. Some feeds only list titles, so
    their full ads are fetched at this point, for these few jobs only. Ads that exclude sponsorship,
    require an existing work permit or are written in German are dropped. Ads that ask for German,
-   Dutch and so on are flagged.
+   Dutch, French and so on are flagged.
 4. Emails the rest, sponsorship-friendly ads first, and only then records them, so a failed email
    is retried on the next run.
 
@@ -234,8 +234,11 @@ A few rules worth knowing:
 - "Systems Engineer" only counts with an IT word in the title, because on its own it is often
   aerospace or medical-device work.
 - Some place names are left out because they exist in other countries too, such as Cambridge
-  (Massachusetts) and Wales (New South Wales). Jobs there still match through "UK" or "United
-  Kingdom".
+  (Massachusetts), Wales (New South Wales) and Victoria (Australia). Jobs there still match
+  through the country name.
+- Canada has no Blue Card equivalent: an employer needs an LMIA or the Global Talent Stream to
+  hire from abroad, so ads that mention either count as sponsorship. Ads limited to citizens or
+  permanent residents are dropped.
 
 ### Why not LinkedIn, Indeed or Glassdoor?
 
