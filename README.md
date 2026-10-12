@@ -143,8 +143,11 @@ make dry-run        # prints what would be sent right now
    terraform -chdir=infra/bootstrap apply
    ```
 
-   For a repository other than `Faozil/Job-Radar`, add `-var="github_repository=owner/name"`,
-   with the exact case GitHub shows: the deploy role's trust policy compares it case-sensitively.
+   For a repository other than `Faozil/Job-Radar`, add `-var="github_repository=owner/name"`
+   with the exact case GitHub shows, plus `-var="github_owner_id=..."` and
+   `-var="github_repository_id=..."` from `https://api.github.com/repos/owner/name`. GitHub's
+   token for repositories created after July 2026 names both ids, so a deleted and recreated
+   repository with the same name can't deploy.
 
 4. Follow the steps the output prints. The first backs up this stack's state, which lives in
    `infra/bootstrap/terraform.tfstate` (git-ignored) because this stack creates the bucket:

@@ -26,6 +26,18 @@ variable "github_repository" {
   }
 }
 
+variable "github_owner_id" {
+  description = "Numeric id of the repository owner: owner.id at https://api.github.com/repos/<owner>/<name>."
+  type        = number
+  default     = 85395336
+}
+
+variable "github_repository_id" {
+  description = "Numeric id of the repository: id at https://api.github.com/repos/<owner>/<name>."
+  type        = number
+  default     = 1412305627
+}
+
 variable "github_environment" {
   description = "GitHub Actions environment the deploy job runs in. Only that environment can assume the role."
   type        = string
