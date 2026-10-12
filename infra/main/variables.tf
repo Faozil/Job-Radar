@@ -13,7 +13,7 @@ variable "name" {
 variable "schedule_expression" {
   description = "When to run, as an EventBridge Scheduler expression."
   type        = string
-  default     = "cron(0 8,18 * * ? *)"
+  default     = "cron(0 0,6,12,18 * * ? *)"
 }
 
 variable "schedule_timezone" {
@@ -65,9 +65,9 @@ variable "log_retention_days" {
 }
 
 variable "lambda_memory_mb" {
-  description = "Lambda memory in MB. A run with ~10,000 job ads peaks near 200 MB; CPU scales with memory."
+  description = "Lambda memory in MB. A run with ~9,000 job ads peaked at 453 MB on Lambda; CPU scales with memory."
   type        = number
-  default     = 512
+  default     = 1024
 }
 
 variable "lambda_timeout_seconds" {

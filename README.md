@@ -1,9 +1,9 @@
 # Job Radar
 
-Twice a day, Job Radar reads the public job boards of companies that hire in visa-friendly European
-countries and Canada, Germany's federal job board and a few remote-job feeds. It keeps the DevOps,
-SRE, platform and cloud roles, reads each ad for visa and relocation signals, and emails you only
-the **new** matches.
+Every six hours, Job Radar reads the public job boards of companies that hire in visa-friendly
+European countries and Canada, Germany's federal job board and a few remote-job feeds. It keeps the
+DevOps, SRE, platform and cloud roles, reads each ad for visa and relocation signals, and emails you
+only the **new** matches.
 
 It runs on AWS Lambda, is deployed with Terraform through GitHub Actions (OIDC, no stored keys), and
 stays inside AWS's always-free limits.
@@ -28,7 +28,7 @@ https://example.com/jobs/456
 
 ```mermaid
 flowchart LR
-    S["EventBridge Scheduler<br/>08:00 and 18:00, Africa/Lagos"] --> L["Lambda: job-radar<br/>Python 3.13, arm64"]
+    S["EventBridge Scheduler<br/>every 6 hours, Africa/Lagos"] --> L["Lambda: job-radar<br/>Python 3.13, arm64"]
     L -->|fetch| B["Greenhouse, Lever, Ashby, SmartRecruiters<br/>company job boards"]
     L -->|fetch| A["Bundesagentur für Arbeit, Arbeitnow<br/>We Work Remotely, Jobicy"]
     L <-->|jobs already sent| D[("DynamoDB<br/>TTL 120 days")]
@@ -58,11 +58,11 @@ Each run:
 
 | Service | Use per month | Cost |
 |---|---|---|
-| Lambda | ~60 runs of about 30 seconds at 512 MB (~900 GB-seconds) | Always-free tier: 1M requests, 400,000 GB-seconds |
+| Lambda | ~120 runs of about 40 seconds at 1 GB (~4,800 GB-seconds) | Always-free tier: 1M requests, 400,000 GB-seconds |
 | DynamoDB | a few hundred reads and writes | 5 RCU / 5 WCU provisioned, inside the always-free 25 / 25 |
-| EventBridge Scheduler | ~60 invocations | Priced per million, rounds to $0.00 |
+| EventBridge Scheduler | ~120 invocations | Priced per million, rounds to $0.00 |
 | SSM Parameter Store | 2 standard SecureString parameters | No charge for standard parameters; AWS managed KMS key |
-| Gmail SMTP | ~60 emails | Free |
+| Gmail SMTP | up to 120 emails (none when nothing is new) | Free |
 | CloudWatch | 4 custom metrics, 1 alarm, a few MB of logs (14-day retention) | Always-free tier: 10 metrics, 10 alarms, 5 GB of logs |
 | S3 (Terraform state) | a few KB | Fractions of a cent |
 
@@ -185,7 +185,8 @@ Open **Actions > Deploy > Run workflow**. It runs the tests, signs in to AWS wit
 applies the main stack, and writes the email settings to SSM. If you set `ALERT_EMAIL`, AWS emails
 you a link to confirm the subscription.
 
-The radar then runs at 08:00 and 18:00 Lagos time. To try it straight away, signed in as in step 3:
+The radar then runs at 00:00, 06:00, 12:00 and 18:00 Lagos time. To try it straight away, signed in
+as in step 3:
 
 ```bash
 aws lambda invoke --region eu-west-1 --function-name job-radar \

@@ -37,7 +37,7 @@ resource "aws_iam_role_policy" "scheduler" {
 resource "aws_scheduler_schedule" "radar" {
   #checkov:skip=CKV_AWS_297:The schedule input holds no data; a customer-managed key costs $1 a month
 
-  name                         = "${var.name}-twice-daily"
+  name                         = "${var.name}-schedule"
   description                  = "Runs ${local.function_name} on schedule"
   schedule_expression          = var.schedule_expression
   schedule_expression_timezone = var.schedule_timezone

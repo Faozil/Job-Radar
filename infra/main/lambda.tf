@@ -20,7 +20,7 @@ data "archive_file" "lambda" {
 
 resource "aws_cloudwatch_log_group" "lambda" {
   #checkov:skip=CKV_AWS_158:Logs hold no secrets; a customer-managed KMS key costs $1 a month
-  #checkov:skip=CKV_AWS_338:Two weeks of logs is enough to debug a twice-daily job and keeps storage free
+  #checkov:skip=CKV_AWS_338:Two weeks of logs is enough to debug a job that runs every 6 hours and keeps storage free
 
   name              = "/aws/lambda/${local.function_name}"
   retention_in_days = var.log_retention_days
