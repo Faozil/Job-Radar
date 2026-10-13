@@ -134,6 +134,21 @@ def test_jobs_offering_sponsorship_come_first():
     assert [job.job_id for job in notifier.calls[0]["jobs"]] == ["2", "1"]
 
 
+def test_better_fits_come_first_within_a_sponsorship_group():
+    filters = FilterConfig.from_lists(
+        title_include=["devops"], locations=["berlin"], skills=["Terraform"]
+    )
+    jobs = [
+        make_job(job_id="1", title="DevOps Engineer I", description="Java and Ruby."),
+        make_job(job_id="2", title="DevOps Engineer II", description="Terraform and Ruby."),
+        make_job(job_id="3", title="DevOps Engineer III", description="Nice office."),
+        make_job(job_id="4", title="DevOps Lead", description="Java. We offer visa sponsorship."),
+    ]
+    notifier = FakeNotifier()
+    run([FakeSource("greenhouse/acme", jobs)], filters, MemoryStore(), notifier, now=NOW)
+    assert [job.job_id for job in notifier.calls[0]["jobs"]] == ["4", "2", "1", "3"]
+
+
 def test_dry_run_does_not_save():
     store = MemoryStore()
     run(

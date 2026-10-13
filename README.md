@@ -16,11 +16,13 @@ Subject: Job Radar: 2 new roles (9 Oct)
 Site Reliability Engineer
 Northwind Payments · Berlin
 Mentions visa or relocation support
+Fit 75% · you have: Kubernetes, Terraform, AWS · also asks for: Go
 https://example.com/jobs/123
 
 Platform Engineer, Observability
 Contoso Cloud · Amsterdam
 Sponsorship not mentioned · Asks for Dutch
+Fit 50% · you have: Prometheus, Grafana · also asks for: GCP, Linux
 https://example.com/jobs/456
 ```
 
@@ -51,8 +53,10 @@ Each run:
    their full ads are fetched at this point, for these few jobs only. Ads that exclude sponsorship,
    require an existing work permit or are written in German are dropped. Ads that ask for German,
    Dutch, French and so on are flagged.
-4. Emails the rest, sponsorship-friendly ads first, and only then records them, so a failed email
-   is retried on the next run.
+4. Scores each ad against your skills: of the tools the ad names, how many you have, and which
+   ones you don't.
+5. Emails the rest, sponsorship-friendly ads first and then the best fits, and only then records
+   them, so a failed email is retried on the next run.
 
 ## What it costs
 
@@ -226,6 +230,12 @@ The feeds each have a `[feeds.<name>]` section and can be switched off with `ena
 `skip_german_ads = true` drops ads written in German, which is most of what the federal job board
 lists.
 
+`[profile] skills` lists your tools, by the names in
+[`src/jobradar/skills.py`](src/jobradar/skills.py) (61 common DevOps tools, with aliases such as k8s
+and EKS for Kubernetes; other names match as whole words). Each email entry then shows a fit score,
+the tools you have that the ad names (most mentioned first, so you know what to put forward in your
+CV) and the ones it asks for that you don't list. A company's own product is ignored, so Datadog ads don't all ask for Datadog.
+
 A few rules worth knowing:
 
 - Junior, mid and senior roles pass. Staff level and above, managers, interns and freelance roles
@@ -289,6 +299,7 @@ On Windows, run these inside WSL, or run the commands from the `Makefile` direct
 src/jobradar/
   sources/        one adapter per board or feed
   filters.py      title, location, freshness, sponsorship and language rules
+  skills.py       known DevOps tools and the fit score against your skills
   pipeline.py     fetch -> filter -> skip seen -> read ads -> classify -> notify -> remember
   store.py        DynamoDB, file and in-memory stores
   notify.py       email (SMTP) and console notifiers

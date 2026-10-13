@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from jobradar.config import FEED_SETTINGS, SOURCES, find_config_path, parse_config
+from jobradar.skills import KNOWN_SKILLS
 from jobradar.sources import build_sources
 
 MINIMAL = {"filters": {"title_include": ["devops"]}}
@@ -14,6 +15,31 @@ def test_repository_config_is_valid(app_config):
     assert app_config.filters.title_include
     assert app_config.max_per_run >= 1
     assert set(app_config.feeds) <= set(FEED_SETTINGS)
+
+
+def test_repository_profile_uses_known_skill_names(app_config):
+    # A typo would silently never match, so the repository profile sticks to the known list.
+    assert app_config.filters.skills.have
+    assert app_config.filters.skills.have <= set(KNOWN_SKILLS)
+
+
+def test_profile_skills_are_read():
+    config = parse_config({**MINIMAL, "profile": {"skills": ["aws", "Crossplane"]}})
+    assert config.filters.skills.have == {"AWS", "Crossplane"}
+
+
+@pytest.mark.parametrize(
+    ("profile", "message"),
+    [
+        ({"skills": "AWS"}, "must be a list"),
+        ({"skill": ["AWS"]}, "unknown setting 'skill'"),
+        ("AWS", "must be a table"),
+        ({"skills": [""]}, "cannot be empty"),
+    ],
+)
+def test_bad_profiles_are_rejected(profile, message):
+    with pytest.raises(ValueError, match=message):
+        parse_config({**MINIMAL, "profile": profile})
 
 
 def test_repository_config_builds_every_source(app_config):

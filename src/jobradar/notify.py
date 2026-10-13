@@ -50,6 +50,17 @@ def details(job: Job) -> str:
     return text
 
 
+def fit_summary(job: Job) -> str:
+    if job.fit is None:
+        return ""
+    text = f"Fit {job.fit}%"
+    if job.skills:
+        text += " · you have: " + ", ".join(job.skills[:6])
+    if job.gaps:
+        text += " · also asks for: " + ", ".join(job.gaps[:5])
+    return text
+
+
 def footer_lines(extra: int, failed: Sequence[str]) -> list[str]:
     lines = []
     if extra:
@@ -61,7 +72,17 @@ def footer_lines(extra: int, failed: Sequence[str]) -> list[str]:
 
 def plain_text(jobs: Sequence[Job], *, extra: int = 0, failed: Sequence[str] = ()) -> str:
     blocks = [
-        f"{job.title}\n{job.company} · {location_summary(job)}\n{details(job)}\n{job.url}"
+        "\n".join(
+            line
+            for line in (
+                job.title,
+                f"{job.company} · {location_summary(job)}",
+                details(job),
+                fit_summary(job),
+                job.url,
+            )
+            if line
+        )
         for job in jobs
     ]
     return "\n\n".join([*blocks, *footer_lines(extra, failed)]) + "\n"
@@ -75,6 +96,8 @@ def html_text(jobs: Sequence[Job], *, extra: int = 0, failed: Sequence[str] = ()
             title = f'<a href="{html.escape(job.url, quote=True)}">{title}</a>'
         place = html.escape(f"{job.company} · {location_summary(job)}")
         info = html.escape(details(job))
+        if fit_summary(job):
+            info += "<br>" + html.escape(fit_summary(job))
         parts.append(f'<p><b>{title}</b><br>{place}<br><span style="color:#666">{info}</span></p>')
     footer = "<br>".join(html.escape(line) for line in footer_lines(extra, failed))
     if footer:

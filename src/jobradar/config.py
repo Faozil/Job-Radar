@@ -66,6 +66,7 @@ def parse_config(raw: dict[str, Any]) -> AppConfig:
         max_age_days=rules.get("max_age_days", 45),
         drop_if_sponsorship_excluded=rules.get("drop_if_sponsorship_excluded", True),
         skip_german_ads=rules.get("skip_german_ads", False),
+        skills=_skills(raw.get("profile") or {}),
     )
     if not filters.title_include:
         raise ValueError("filters.title_include needs at least one pattern")
@@ -99,6 +100,18 @@ def _boards(items: list[dict[str, Any]]) -> tuple[Board, ...]:
         seen.add((source, board_id.lower()))
         boards.append(Board(source, board_id, str(item.get("name") or board_id), region))
     return tuple(boards)
+
+
+def _skills(profile: Any) -> list[str]:
+    if not isinstance(profile, dict):
+        raise ValueError("profile must be a table, like [profile]")
+    unknown = sorted(set(profile) - {"skills"})
+    if unknown:
+        raise ValueError(f"profile: unknown setting {unknown[0]!r}")
+    skills = profile.get("skills", [])
+    if not isinstance(skills, list) or not all(isinstance(item, str) for item in skills):
+        raise ValueError("profile.skills must be a list of names")
+    return skills
 
 
 def _feeds(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:

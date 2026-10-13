@@ -127,6 +127,7 @@ def _dedupe(jobs: list[Job]) -> list[Job]:
     return list(unique.values())
 
 
-def _priority(job: Job) -> tuple[int, float, str]:
+def _priority(job: Job) -> tuple[int, int, float, str]:
     published = job.published_at.timestamp() if job.published_at else 0.0
-    return (_SPONSORSHIP_RANK.get(job.sponsorship, 2), -published, job.company.lower())
+    fit = -1 if job.fit is None else job.fit
+    return (_SPONSORSHIP_RANK.get(job.sponsorship, 2), -fit, -published, job.company.lower())

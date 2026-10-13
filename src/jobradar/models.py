@@ -26,6 +26,9 @@ class Job:
     published_at: datetime | None = None
     sponsorship: str = SPONSORSHIP_UNKNOWN
     flags: list[str] = field(default_factory=list)
+    fit: int | None = None
+    skills: list[str] = field(default_factory=list)
+    gaps: list[str] = field(default_factory=list)
 
     @property
     def key(self) -> str:

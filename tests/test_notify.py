@@ -69,6 +69,16 @@ def test_email_has_plain_and_escaped_html_parts():
     assert "A&amp;B · Berlin, Germany" in html
 
 
+def test_fit_is_shown_when_the_ad_names_tools():
+    job = make_job(fit=67, skills=["Terraform", "AWS"], gaps=["GCP"])
+    plain, html = bodies(build_email([job], address=ADDRESS, now=SENT_AT))
+    line = "Fit 67% · you have: Terraform, AWS · also asks for: GCP"
+    assert f"Sponsorship not mentioned\n{line}\nhttps://" in plain
+    assert f"Sponsorship not mentioned<br>{line}</span>" in html
+    plain, _ = bodies(build_email([make_job()], address=ADDRESS, now=SENT_AT))
+    assert "Fit" not in plain
+
+
 def test_only_web_links_are_clickable():
     _, html = bodies(build_email([make_job(url="javascript:alert(1)")], address=ADDRESS))
     assert "href" not in html

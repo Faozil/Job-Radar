@@ -143,6 +143,16 @@ remote_regions = ["worldwide", "anywhere", "global", "emea", "africa", "nigeria"
 # Flagged in the digest, not dropped.
 flag_languages = ["german", "dutch", "lithuanian", "romanian", "polish", "french"]
 
+# Your skills, compared with the tools each ad names (the list is in src/jobradar/skills.py; other
+# names match as whole words). Each job gets a fit score, and the digest sorts by it within each
+# sponsorship group.
+[profile]
+skills = [
+  "AWS", "Azure", "Serverless", "Terraform", "Ansible", "Docker", "Kubernetes", "Azure DevOps",
+  "GitHub Actions", "GitLab CI", "Jenkins", "ArgoCD", "Semgrep", "Trivy", "Checkov", "SonarQube",
+  "Datadog", "Prometheus", "Grafana", "Python", "C#", ".NET", "PostgreSQL", "SQL Server", "MySQL",
+]
+
 # Job feeds that list many employers. Set enabled = false to turn one off.
 [feeds.arbeitnow]
 pages = 3

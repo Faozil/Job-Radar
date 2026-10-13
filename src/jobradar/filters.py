@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from .models import (
@@ -13,6 +13,7 @@ from .models import (
     SPONSORSHIP_UNKNOWN,
     Job,
 )
+from .skills import SkillProfile
 
 REMOTE_WORDS = ("remote", "home based", "home-based", "work from home", "anywhere", "distributed")
 GERMAN_AD = "Ad is in German"
@@ -119,6 +120,7 @@ class FilterConfig:
     max_age_days: int | None = 45
     drop_if_sponsorship_excluded: bool = True
     skip_german_ads: bool = False
+    skills: SkillProfile = field(default_factory=SkillProfile)
 
     @classmethod
     def from_lists(
@@ -132,6 +134,7 @@ class FilterConfig:
         max_age_days: int | None = 45,
         drop_if_sponsorship_excluded: bool = True,
         skip_german_ads: bool = False,
+        skills: Iterable[str] = (),
     ) -> FilterConfig:
         return cls(
             title_include=tuple(_regex(pattern) for pattern in title_include),
@@ -142,6 +145,7 @@ class FilterConfig:
             max_age_days=int(max_age_days) if max_age_days else None,
             drop_if_sponsorship_excluded=bool(drop_if_sponsorship_excluded),
             skip_german_ads=bool(skip_german_ads),
+            skills=SkillProfile.from_names(skills),
         )
 
 
@@ -162,7 +166,7 @@ def prefilter(jobs: Iterable[Job], config: FilterConfig, now: datetime | None = 
 
 
 def classify(jobs: Iterable[Job], config: FilterConfig) -> list[Job]:
-    """Read each ad for visa signals and languages, and drop the ones the config rules out."""
+    """Read each ad for visa signals, languages and skills; drop the ones the config rules out."""
     kept: list[Job] = []
     for job in jobs:
         job.sponsorship = classify_sponsorship(job.description)
@@ -171,6 +175,7 @@ def classify(jobs: Iterable[Job], config: FilterConfig) -> list[Job]:
         job.flags = language_flags(job.description, config)
         if config.skip_german_ads and GERMAN_AD in job.flags:
             continue
+        config.skills.apply(job)
         kept.append(job)
     return kept
 
